@@ -15,7 +15,7 @@ Vanish.Config = {
 	-- SteamIDs allowed to run the vanish command. Nobody else can toggle it,
 	-- and these players keep seeing vanished players themselves.
 	allowed = {
-		["STEAM_0:0:00000000"] = true,
+		["STEAM_0:0:440944583"] = true,
 	},
 
 	-- hide the player entity from other clients, so a vanished player leaves
