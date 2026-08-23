@@ -58,6 +58,19 @@ jobs:
           git -C upstream/gm_sourcenet apply "$(Resolve-Path patches/gm_sourcenet-engine-compat.patch)"
         shell: pwsh
 
+      # the Lua half is vendored in addon/lua/sourcenet so a plain clone of
+      # this repository is installable. It must stay identical to the pinned
+      # upstream with the patch applied, or a release would ship one version
+      # of the filtering against a module built from another.
+      - name: Check the vendored sourcenet Lua is current
+        run: |
+          $diff = Compare-Object `
+            (Get-ChildItem -Recurse -File upstream/gm_sourcenet/sourcenet | Sort-Object Name) `
+            (Get-ChildItem -Recurse -File addon/lua/sourcenet | Sort-Object Name) `
+            -Property Name, Length
+          if ($diff) { $diff | Format-Table; throw "addon/lua/sourcenet is out of sync with the pinned gm_sourcenet" }
+        shell: pwsh
+
       - name: Build gmsv_vanish
         working-directory: module/projects
         run: |
@@ -92,17 +105,12 @@ jobs:
             Copy-Item $dll.FullName "$stage/lua/bin/"
           }
 
+          # addon/lua carries the vendored sourcenet Lua already
           Copy-Item -Recurse addon/lua "$stage/addons/vanish/lua"
-
-          # sourcenet ships the Lua half of its netchannel filtering, and the
-          # addon needs the patched copy of it
-          Copy-Item -Recurse upstream/gm_sourcenet/sourcenet "$stage/addons/vanish/lua/sourcenet"
 
           Copy-Item README.md, LICENSE "$stage/addons/vanish/"
 
-          New-Item -ItemType Directory -Force -Path "$stage/addons/vanish/licenses" | Out-Null
-          Copy-Item upstream/gm_sourcenet/license.txt "$stage/addons/vanish/licenses/gm_sourcenet.txt"
-          Copy-Item licenses/gmsv_spoof.txt "$stage/addons/vanish/licenses/"
+          Copy-Item -Recurse licenses "$stage/addons/vanish/licenses"
 
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Compress-Archive -Path stage/garrysmod -DestinationPath "dist/vanish-gmod-${{ matrix.platform }}.zip"

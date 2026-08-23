@@ -82,6 +82,10 @@ garrysmod/lua/bin/gmsv_sourcenet_win32.dll
 garrysmod/addons/vanish/lua/...
 ```
 
+Every feature still degrades on its own: with the `sourcenet` Lua missing,
+`status` and `ping` filtering reports itself unavailable and the rest of the
+addon carries on.
+
 Extract it over your `garrysmod` folder, set `allowed` in the config, restart.
 gm_sourcenet is built from its pinned upstream commit with the patch in
 [`patches/`](patches) already applied.
@@ -97,15 +101,21 @@ premake5 --gmcommon=../../dependencies/garrysmod_common vs2022   # or gmake
 Build the generated project in **Release / Win32**, then copy
 `gmsv_vanish_win32.dll` into `garrysmod/lua/bin/`.
 
-That builds this repository's module only. The CI workflow additionally clones
-gm_sourcenet at its pinned commit, applies the patch and packs both; see [.github/workflows/build.yml](.github/workflows/build.yml) if you
-want the same locally.
+That builds this repository's module only. `gmsv_sourcenet_win32.dll` has to
+come from the release archive or from your own build of the pinned commit with
+the patch in [`patches/`](patches) applied; the CI workflow does exactly that,
+see [.github/workflows/build.yml](.github/workflows/build.yml).
+
+The Lua half of gm_sourcenet is vendored in
+[`addon/lua/sourcenet/`](addon/lua/sourcenet), patched, so a plain clone is
+installable. CI fails the build if it drifts from the pinned upstream.
 
 ## Installing
 
-1. Copy [`addon/`](addon) to `garrysmod/addons/vanish/`.
-2. Copy the module DLLs to `garrysmod/lua/bin/`, and gm_sourcenet's `sourcenet`
-   Lua folder to `garrysmod/addons/vanish/lua/sourcenet/`.
+1. Copy [`addon/`](addon) to `garrysmod/addons/vanish/`. The patched
+   `sourcenet` Lua is vendored in [`addon/lua/sourcenet/`](addon/lua/sourcenet)
+   and comes along with it.
+2. Copy the module DLLs to `garrysmod/lua/bin/`.
 3. Put your SteamID in `allowed` in
    [`addon/lua/vanish/sv_config.lua`](addon/lua/vanish/sv_config.lua).
 4. Restart the server and run `vanish` in your console to toggle.
@@ -114,6 +124,7 @@ want the same locally.
 
 ```
 addon/lua/
+  sourcenet/                  vendored gm_sourcenet Lua, patched
   autorun/server/vanish.lua   loads everything in order
   vanish/sv_config.lua        every setting lives here
   vanish/core/                vanish state and the console command

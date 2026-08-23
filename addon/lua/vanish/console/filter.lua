@@ -1,6 +1,15 @@
 -- Drops the console commands that would list a vanished player.
 
-include("sourcenet/incoming.lua")
+-- sourcenet ships the Lua half of its netchannel filtering. Without it there
+-- is no way to see a client command before the engine runs it, so the feature
+-- reports itself missing and stops: the rest of the addon is unaffected.
+if not pcall(include, "sourcenet/incoming.lua") or not FilterIncomingMessage then
+	if Vanish.Config.filterCommands then
+		ErrorNoHalt("[vanish] sourcenet unavailable, status and ping are unfiltered\n")
+	end
+
+	return
+end
 
 ---@param cmd string raw command line sent by the client
 ---@return boolean blocked whether this command enumerates connected players
