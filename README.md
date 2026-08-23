@@ -1,12 +1,34 @@
-# vanish-gmod
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/vanish-dark.svg">
+    <img src="docs/images/vanish.svg" alt="vanish logo" width="120" height="120">
+  </picture>
+</p>
 
-![build](https://github.com/ds-kimi/vanish-gmod/actions/workflows/build.yml/badge.svg)
+<h1 align="center">vanish</h1>
 
-Server-side player hiding for Garry's Mod. A whitelisted player runs `vanish`
-and drops out of the world, out of every scoreboard, out of `status` and `ping`,
-out of server-side Lua, and out of A2S query tools.
+<p align="center">
+  <strong>Server-side player hiding for Garry's Mod servers</strong><br>
+  <sub>CheckTransmit · delta headers · A2S · faked disconnect</sub>
+</p>
 
-Nothing ships to clients, so nothing depends on a client cooperating.
+<p align="center">
+  <a href="https://github.com/ds-kimi/vanish-gmod/releases"><img src="https://img.shields.io/github/v/release/ds-kimi/vanish-gmod?sort=semver&amp;style=for-the-badge&amp;logo=github&amp;label=release" alt="GitHub release"></a>
+  <a href="https://github.com/ds-kimi/vanish-gmod/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/ds-kimi/vanish-gmod/build.yml?style=for-the-badge&amp;logo=githubactions&amp;logoColor=white&amp;label=build" alt="Build"></a>
+  <a href="https://github.com/ds-kimi/vanish-gmod"><img src="https://img.shields.io/github/stars/ds-kimi/vanish-gmod?style=for-the-badge&amp;logo=github" alt="GitHub stars"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-blue?style=for-the-badge" alt="BSD 3-Clause License"></a>
+  <img src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&amp;logo=windows&amp;logoColor=white" alt="Windows">
+  <img src="https://img.shields.io/badge/Garry%27s%20Mod-2581d8?style=for-the-badge" alt="Garry's Mod">
+</p>
+
+<br>
+
+A whitelisted player runs `vanish` and drops out of the world, out of every
+scoreboard, out of `status` and `ping`, out of server-side Lua, and out of A2S
+query tools. Nothing ships to clients, so nothing depends on a client
+cooperating.
+
+---
 
 ## What it looks like
 
@@ -307,3 +329,11 @@ gmsv_serversecure by Daniel Almeida, BSD 3-Clause: see
 
 `garrysmod_common` and gm_sourcenet are the property of their respective
 authors and carry their own licenses.
+
+---
+
+## Star history
+
+<a href="https://www.star-history.com/#ds-kimi/vanish-gmod&amp;Date"><img src="https://api.star-history.com/svg?repos=ds-kimi/vanish-gmod&amp;type=Date" alt="Star history chart"></a>
+
+See the interactive chart on **[Star History](https://www.star-history.com/)** (repo: `ds-kimi/vanish-gmod`).
