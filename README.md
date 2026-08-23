@@ -86,7 +86,7 @@ gm_sourcenet is built from its pinned upstream commit with the patch in
 ## Building
 
 ```sh
-git clone --recursive https://github.com/<you>/vanish-gmod.git
+git clone --recursive https://github.com/ds-kimi/vanish-gmod.git
 cd vanish-gmod/module/projects
 premake5 --gmcommon=../../dependencies/garrysmod_common vs2022   # or gmake
 ```

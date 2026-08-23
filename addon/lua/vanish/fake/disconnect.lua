@@ -16,7 +16,7 @@ local function disconnectFields(ply)
 end
 
 ---@param ply Player
----@return table fields matching the engine player_connect descriptor
+---@return table fields matching the engine player_connect_client descriptor
 local function connectFields(ply)
 	return {
 		userid = ply:UserID(),
@@ -25,9 +25,6 @@ local function connectFields(ply)
 		index = ply:EntIndex() - 1,
 		name = ply:Nick(),
 		networkid = ply:SteamID(),
-		-- the engine sends "none" for a real client too, so no address of a
-		-- player ever reaches the other clients through this
-		address = "none",
 		bot = ply:IsBot() and 1 or 0,
 	}
 end
@@ -50,7 +47,24 @@ function Vanish.FakeRejoin(ply)
 	if not Vanish.Config.disconnect.announceRejoin then return end
 	if not IsValid(ply) or not ply:IsPlayer() then return end
 
-	vanishevent.Fire("player_connect", connectFields(ply))
+	local fields = connectFields(ply)
+
+	-- the join notice comes from player_connect_client, the address free
+	-- variant the engine raises for a real client. player_connect only exists
+	-- for the older descriptor list, and is tried when the first is unknown
+	local sent = vanishevent.Fire("player_connect_client", fields)
+
+	if not sent then
+		-- the engine sends "none" for a real client too, so no address of a
+		-- player ever reaches the other clients through this
+		fields.address = "none"
+		sent = vanishevent.Fire("player_connect", fields)
+	end
+
+	if Vanish.Config.debug then
+		print(string.format("[vanish] rejoin event for %s sent=%s",
+			ply:Nick(), tostring(sent)))
+	end
 end
 
 if not vanishevent and Vanish.Config.fakeDisconnect then
