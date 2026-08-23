@@ -113,13 +113,13 @@ jobs:
           Copy-Item -Recurse licenses "$stage/addons/vanish/licenses"
 
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive -Path stage/garrysmod -DestinationPath "dist/vanish-gmod-${{ matrix.platform }}.zip"
+          Compress-Archive -Path stage/garrysmod -DestinationPath "dist/vanish-${{ matrix.platform }}.zip"
         shell: pwsh
 
       - uses: actions/upload-artifact@v4
         with:
-          name: vanish-gmod-${{ matrix.platform }}
-          path: dist/vanish-gmod-${{ matrix.platform }}.zip
+          name: vanish-${{ matrix.platform }}
+          path: dist/vanish-${{ matrix.platform }}.zip
           if-no-files-found: error
 
   release:
@@ -146,7 +146,7 @@ jobs:
         run: |
           if [ "$REF_TYPE" = "tag" ]; then
             tag="$REF_NAME"
-            title="vanish-gmod $REF_NAME"
+            title="vanish $REF_NAME"
           else
             tag="build-$RUN_NUMBER"
             title="Build $RUN_NUMBER ($(git rev-parse --short HEAD))"

@@ -18,7 +18,7 @@ to a fresh clone:
 
 ```sh
 git clone --recursive https://github.com/danielga/gm_sourcenet.git
-cd gm_sourcenet && git apply ../vanish-gmod/patches/gm_sourcenet-engine-compat.patch
+cd gm_sourcenet && git apply ../vanish/patches/gm_sourcenet-engine-compat.patch
 ```
 
 What they fix:

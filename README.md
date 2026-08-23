@@ -13,9 +13,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ds-kimi/vanish-gmod/releases"><img src="https://img.shields.io/github/v/release/ds-kimi/vanish-gmod?sort=semver&amp;style=for-the-badge&amp;logo=github&amp;label=release" alt="GitHub release"></a>
-  <a href="https://github.com/ds-kimi/vanish-gmod/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/ds-kimi/vanish-gmod/build.yml?style=for-the-badge&amp;logo=githubactions&amp;logoColor=white&amp;label=build" alt="Build"></a>
-  <a href="https://github.com/ds-kimi/vanish-gmod"><img src="https://img.shields.io/github/stars/ds-kimi/vanish-gmod?style=for-the-badge&amp;logo=github" alt="GitHub stars"></a>
+  <a href="https://github.com/ds-kimi/vanish/releases"><img src="https://img.shields.io/github/v/release/ds-kimi/vanish?sort=semver&amp;style=for-the-badge&amp;logo=github&amp;label=release" alt="GitHub release"></a>
+  <a href="https://github.com/ds-kimi/vanish/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/ds-kimi/vanish/build.yml?style=for-the-badge&amp;logo=githubactions&amp;logoColor=white&amp;label=build" alt="Build"></a>
+  <a href="https://github.com/ds-kimi/vanish"><img src="https://img.shields.io/github/stars/ds-kimi/vanish?style=for-the-badge&amp;logo=github" alt="GitHub stars"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-blue?style=for-the-badge" alt="BSD 3-Clause License"></a>
   <img src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&amp;logo=windows&amp;logoColor=white" alt="Windows">
   <img src="https://img.shields.io/badge/Garry%27s%20Mod-2581d8?style=for-the-badge" alt="Garry's Mod">
@@ -150,7 +150,7 @@ command filter says so in the console and stops.
 ## Downloads
 
 Every commit publishes a release with one archive per platform, currently
-`vanish-gmod-win32.zip`. Each archive mirrors the `garrysmod` directory:
+`vanish-win32.zip`. Each archive mirrors the `garrysmod` directory:
 
 ```
 garrysmod/lua/bin/gmsv_vanish_win32.dll
@@ -165,8 +165,8 @@ gm_sourcenet is built from its pinned upstream commit with the patch in
 ## Building
 
 ```sh
-git clone --recursive https://github.com/ds-kimi/vanish-gmod.git
-cd vanish-gmod/module/projects
+git clone --recursive https://github.com/ds-kimi/vanish.git
+cd vanish/module/projects
 premake5 --gmcommon=../../dependencies/garrysmod_common vs2022   # or gmake
 ```
 
@@ -334,6 +334,6 @@ authors and carry their own licenses.
 
 ## Star history
 
-<a href="https://www.star-history.com/#ds-kimi/vanish-gmod&amp;Date"><img src="https://api.star-history.com/svg?repos=ds-kimi/vanish-gmod&amp;type=Date" alt="Star history chart"></a>
+<a href="https://www.star-history.com/#ds-kimi/vanish&amp;Date"><img src="https://api.star-history.com/svg?repos=ds-kimi/vanish&amp;type=Date" alt="Star history chart"></a>
 
-See the interactive chart on **[Star History](https://www.star-history.com/)** (repo: `ds-kimi/vanish-gmod`).
+See the interactive chart on **[Star History](https://www.star-history.com/)** (repo: `ds-kimi/vanish`).
