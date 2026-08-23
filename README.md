@@ -3,11 +3,64 @@
 ![build](https://github.com/ds-kimi/vanish-gmod/actions/workflows/build.yml/badge.svg)
 
 Server-side player hiding for Garry's Mod. A whitelisted player runs `vanish`
-and disappears from the world, from every scoreboard, from `status` and `ping`,
-from server-side Lua, and from A2S query tools.
+and drops out of the world, out of every scoreboard, out of `status` and `ping`,
+out of server-side Lua, and out of A2S query tools.
 
-No client-side code. Nothing is shipped to clients, so nothing depends on a
-client cooperating.
+Nothing ships to clients, so nothing depends on a client cooperating.
+
+## What it looks like
+
+Kimi is the vanished player in every screenshot. Viktor is an ordinary player,
+and everything below is what Viktor's client shows.
+
+Vanishing sends the leave message the engine would send for a real disconnect,
+and unvanishing sends the matching join:
+
+![chat leave message](docs/images/disconnect.png)
+
+![chat join message](docs/images/connect.png)
+
+`status`, typed by Viktor, before and after:
+
+| Kimi visible | Kimi vanished |
+|---|---|
+| ![status listing both players](docs/images/status_unvanished.png) | ![status listing only Viktor](docs/images/status_vanished.png) |
+
+The A2S player list that the server browser and every external query tool read:
+
+| Kimi visible | Kimi vanished |
+|---|---|
+| ![A2S player list with both players](docs/images/a2p_unvanished.png) | ![A2S player list with only Viktor](docs/images/a2p_vanished.png) |
+
+And every client-side way of reaching a player, run from Viktor's console:
+
+| Kimi visible | Kimi vanished |
+|---|---|
+| ![Lua enumeration finding both players](docs/images/lua_run_unvanished.png) | ![Lua enumeration finding only Viktor](docs/images/lua_run_vanished.png) |
+
+The entity count falls from 85 to 70 across the toggle: the player, their
+weapons and everything else they own.
+
+### Checking it yourself
+
+Paste this into a client console to sweep every way a client can reach a
+player. `*` marks a dormant entity, `!!` marks a player that some function
+returned but `player.GetAll` did not.
+
+<details>
+<summary>lua_run_cl one-liner</summary>
+
+```lua
+lua_run_cl local base,o={},{} for _,p in ipairs(player.GetAll()) do base[p]=true end local function c(n,l) local t={} for _,e in pairs(l or {}) do if IsValid(e) and e:IsPlayer() then local k=e:Nick()..(e:IsDormant() and "*" or "") if not base[e] then k="!!"..k end t[#t+1]=k end end o[#o+1]=string.format("%-26s %2d  %s",n,#t,table.concat(t,", ")) end c("player.GetAll",player.GetAll()) c("player.GetHumans",player.GetHumans()) c("player.GetBots",player.GetBots()) c("ents.GetAll",ents.GetAll()) c("ents.FindByClass(player)",ents.FindByClass("player")) c("ents.FindInSphere",ents.FindInSphere(Vector(0,0,0),100000)) c("ents.FindInBox",ents.FindInBox(Vector(-16384,-16384,-16384),Vector(16384,16384,16384))) local a={} if player.Iterator then for _,p in player.Iterator() do a[#a+1]=p end end c("player.Iterator",a) local b={} if ents.Iterator then for _,e in ents.Iterator() do b[#b+1]=e end end c("ents.Iterator",b) local d={} for i=1,game.MaxPlayers()+2 do local e=Entity(i) if IsValid(e) and e:IsPlayer() then d[#d+1]=e end end c("Entity(1..maxplayers)",d) local f={} for i=1,256 do local p=player.GetByID(i) if IsValid(p) then f[#f+1]=p end end c("player.GetByID(1..256)",f) local g={} for id=-2,32 do for _,p in ipairs(team.GetPlayers(id) or {}) do g[#g+1]=p end end c("team.GetPlayers(-2..32)",g) o[#o+1]="player.GetCount="..player.GetCount().."  #ents.GetAll="..#ents.GetAll().."  maxplayers="..game.MaxPlayers().."  scoreboard rows="..#player.GetAll() MsgN("\n"..table.concat(o,"\n").."\n")
+```
+
+</details>
+
+The `Entity(1..maxplayers)` row is the one that decides it. Every other
+client-side function is built on the entity list, so if the raw index sweep is
+clean, nothing else can leak. A dormant hit there means the entity survived as
+a ghost with its name and SteamID intact, which is exactly what the
+`SV_WriteDeltaHeader` detour exists to prevent.
 
 ## What it hides
 
@@ -18,10 +71,10 @@ client cooperating.
 | `status`, `ping`, `users`, `stats` | command dropped at the netchannel, answered with a filtered listing |
 | Server-side Lua | the roster, lookup, iterator, spatial search and team counter functions, listed below |
 | A2S_INFO / A2S_PLAYER | `recvfrom` detour answers queries from the visible roster |
-| Client leave notice, client side addons | a real `player_disconnect` game event is broadcast, so every client runs its own disconnect path |
-| Admin mod logs | the selected server side `PlayerDisconnected` handlers are run for a player that never left, mirrored by the join handlers on unvanish |
-| Footsteps, weapon fire, physics, voice, chat | suppressed at the hook that emits them, since sound and voice are networked by position and name rather than by transmit state |
-| Kill feed, damage logs, death events | damage they deal is blocked, suicide is blocked, and the attack buttons are stripped so no tracer or decal is sent |
+| Client leave notice, client-side addons | a real `player_disconnect` game event goes out, so every client runs its own disconnect path |
+| Admin mod logs | the selected `PlayerDisconnected` handlers run for a player that never left, and the join handlers run on unvanish |
+| Footsteps, weapon fire, physics, voice, chat | stopped at the hook that emits them, because sound and voice travel by position and name rather than by transmit state |
+| Kill feed, damage logs, death events | damage they deal is blocked, suicide is blocked, and the attack buttons are stripped so no tracer or decal goes out |
 | userinfo string table | optional, blanks the last copy of their name and SteamID left on every client |
 
 Staff listed in `allowed` keep seeing vanished players, and a vanished player
@@ -32,27 +85,27 @@ always sees themselves.
 `hideFromQueries` makes the server answer A2S_INFO and A2S_PLAYER itself, with
 the hidden player removed and the player count reduced. That is the same
 mechanism player-count spoofers use, and Facepunch treats a server whose query
-replies disagree with its real state as fraudulent: servers doing this have
-been delisted from the in-game server browser, and the ban applies to the
-server, not to the addon.
+replies disagree with its real state as fraudulent. Servers doing this have
+been delisted from the in-game server browser, and the ban lands on the server,
+not on the addon.
 
 The risk is yours to weigh. A private server nobody queries is a different
 situation from a public one advertising on the master list. If you are not
 prepared to be delisted, set `hideFromQueries = false` and accept that query
-tools still see the vanished player; every other surface stays hidden.
+tools still see the vanished player. Every other surface stays hidden.
 
-It ships **enabled**. If your server is public, decide deliberately whether to
-keep it that way.
+It ships enabled. If your server is public, decide deliberately whether to keep
+it that way.
 
 ## Why a module is needed
 
 `Entity:SetPreventTransmit` does not hide players. `CBasePlayer` edicts are
 marked `FL_EDICT_ALWAYS`, and the engine writes them to every client's snapshot
-regardless. Clearing the transmit bit after the engine's own pass fixes that,
-but only halfway: a per-client hide makes the client mark the entity *dormant*
-rather than delete it, because the engine only sets `FHDR_DELETE` when an
-entity leaves the **global** frame snapshot. A dormant entity keeps its name
-and SteamID in the client's entity list, which is why it still appears on
+regardless. Clearing the transmit bit after the engine's own pass fixes half of
+it. The other half is that a per-client hide makes the client mark the entity
+*dormant* rather than delete it, because the engine only sets `FHDR_DELETE`
+when an entity leaves the **global** frame snapshot. A dormant entity keeps its
+name and SteamID in the client's entity list, which is why it still turns up on
 scoreboards. `gmsv_vanish` detours `SV_WriteDeltaHeader` and promotes the
 header to a delete for hidden entities, per receiving client.
 
@@ -60,16 +113,17 @@ header to a delete for hidden entities, per receiving client.
 
 - Garry's Mod dedicated server, **Windows 32-bit (`win32`) only for now**.
   Linux and 64-bit builds are coming: the engine offsets the hooks rely on were
-  verified against the x86 Windows engine and each other platform needs its own
+  verified against the x86 Windows engine, and each other platform needs its own
   check before it can be trusted.
-- `gmsv_vanish` — this repository. Hides entities and answers A2S queries.
-- [gm_sourcenet](https://github.com/danielga/gm_sourcenet) — optional, needed
-  to filter `status` and `ping`. It needs the compatibility patch in
+- `gmsv_vanish`, this repository. Hides entities and answers A2S queries.
+- [gm_sourcenet](https://github.com/danielga/gm_sourcenet), optional, needed to
+  filter `status` and `ping`. It needs the compatibility patch in
   [`patches/`](patches) to load on current GMod builds; see
   [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Each feature degrades on its own: without a module the matching config option
-does nothing and the rest keeps working.
+Every feature degrades on its own. Without a module, the matching config option
+does nothing and the rest keeps working; without the `sourcenet` Lua, the
+command filter says so in the console and stops.
 
 ## Downloads
 
@@ -81,10 +135,6 @@ garrysmod/lua/bin/gmsv_vanish_win32.dll
 garrysmod/lua/bin/gmsv_sourcenet_win32.dll
 garrysmod/addons/vanish/lua/...
 ```
-
-Every feature still degrades on its own: with the `sourcenet` Lua missing,
-`status` and `ping` filtering reports itself unavailable and the rest of the
-addon carries on.
 
 Extract it over your `garrysmod` folder, set `allowed` in the config, restart.
 gm_sourcenet is built from its pinned upstream commit with the patch in
@@ -102,19 +152,18 @@ Build the generated project in **Release / Win32**, then copy
 `gmsv_vanish_win32.dll` into `garrysmod/lua/bin/`.
 
 That builds this repository's module only. `gmsv_sourcenet_win32.dll` has to
-come from the release archive or from your own build of the pinned commit with
-the patch in [`patches/`](patches) applied; the CI workflow does exactly that,
+come from the release archive, or from your own build of the pinned commit with
+the patch in [`patches/`](patches) applied. The CI workflow does exactly that,
 see [.github/workflows/build.yml](.github/workflows/build.yml).
 
-The Lua half of gm_sourcenet is vendored in
-[`addon/lua/sourcenet/`](addon/lua/sourcenet), patched, so a plain clone is
-installable. CI fails the build if it drifts from the pinned upstream.
+The Lua half of gm_sourcenet is vendored, patched, in
+[`addon/lua/sourcenet/`](addon/lua/sourcenet), so a plain clone is installable.
+CI fails the build if it drifts from the pinned upstream.
 
 ## Installing
 
 1. Copy [`addon/`](addon) to `garrysmod/addons/vanish/`. The patched
-   `sourcenet` Lua is vendored in [`addon/lua/sourcenet/`](addon/lua/sourcenet)
-   and comes along with it.
+   `sourcenet` Lua comes along with it.
 2. Copy the module DLLs to `garrysmod/lua/bin/`.
 3. Put your SteamID in `allowed` in
    [`addon/lua/vanish/sv_config.lua`](addon/lua/vanish/sv_config.lua).
@@ -157,29 +206,29 @@ SteamID; set `status.spoof` to `true` to send fixed strings instead.
 
 ## Faking the disconnect
 
-Hiding the entity removes a player from the world, but a client that simply
-loses an entity says nothing about it. `fakeDisconnect` broadcasts the engine's
-own `player_disconnect` event, which is what makes the client print
-"Name has left the game (reason)", drop the player from its own tracking and
-run every client side addon listening for that event. Lua cannot raise a game
-event, so the module exposes `vanishevent.Fire(name, fields)` for it.
+Hiding the entity removes a player from the world, but a client that loses an
+entity says nothing about it. `fakeDisconnect` broadcasts the engine's own
+`player_disconnect` event, which is what makes the client print "Name has left
+the game (reason)", drop the player from its own tracking, and run every
+client-side addon listening for that event. Lua cannot raise a game event, so
+the module exposes `vanishevent.Fire(name, fields)` for it.
 
 Server side, `disconnect.hooks` selects which `PlayerDisconnected` handlers
 run, so ULX, SAM and similar log the departure:
 
-- `"none"` - nothing runs, only clients are told
-- `"match"` (default) - handlers whose identifier contains one of
-  `disconnect.hookPatterns`, by default `ulx`, `ulib`, `log`, which reaches the
-  logging handlers, ULX's and DarkRP's FAdmin among them, and nothing that
-  changes player state
-- `"all"` - every handler, gamemode logic included. DarkRP sells doors, drops
+- `"none"`, nothing runs and only clients are told.
+- `"match"`, the default: handlers whose identifier contains one of
+  `disconnect.hookPatterns`, by default `ulx`, `ulib` and `log`. That reaches
+  the logging handlers, ULX's and DarkRP's FAdmin among them, and nothing that
+  changes player state.
+- `"all"`, every handler, gamemode logic included. DarkRP sells doors, drops
   money and saves the player's data on disconnect, and none of that is undone
   when the player unvanishes. Opt in deliberately.
 
-Unvanishing broadcasts `player_connect` so the reappearance reads as a
-rejoin; set `disconnect.announceRejoin` to `false` to return silently.
+Unvanishing broadcasts `player_connect`, so coming back reads as a rejoin. Set
+`disconnect.announceRejoin` to `false` to return silently.
 
-Every client is told, staff included: the engine has no way to send a game
+Every client is told, staff included. The engine has no way to send a game
 event to a chosen subset of clients, so an allowed viewer sees the leave
 message even though the player stays visible to them.
 
@@ -187,11 +236,10 @@ message even though the player stays visible to them.
 
 `protect` gives a vanished player godmode, noclip, notarget and pass-through
 collisions, restored on unvanish from the state captured when they vanished.
-All four are engine level and reachable from Lua - `GodEnable` sets
-`FL_GODMODE`, `SetMoveType` writes `MOVETYPE_NOCLIP` - so no module is needed;
-`EntityTakeDamage` additionally blocks code that damages players without
-consulting `FL_GODMODE`. Individual pieces toggle under
-`Vanish.Config.protection`.
+All four are engine level and reachable from Lua: `GodEnable` sets
+`FL_GODMODE`, `SetMoveType` writes `MOVETYPE_NOCLIP`. No module is involved.
+`EntityTakeDamage` also blocks code that damages players without consulting
+`FL_GODMODE`. Individual pieces toggle under `Vanish.Config.protection`.
 
 ## What server-side Lua sees
 
@@ -204,18 +252,18 @@ because filtering only the list functions leaves each of these wide open:
 | `ents` | `GetAll`, `Iterator`, `FindByClass`, `FindByModel`, `FindByName`, `FindInSphere`, `FindInBox`, `FindInCone`, `FindAlongRay` |
 | `team` | `GetPlayers`, `NumPlayers`, `TotalFrags`, `TotalDeaths` |
 
-`player.Iterator` and `ents.Iterator` matter most: they are what addons written
+`player.Iterator` and `ents.Iterator` matter most. They are what addons written
 since 2023 use instead of `GetAll`, and an unfiltered iterator hands out every
 vanished player no matter how well the list functions are masked. The team
 counters matter for the same reason in reverse: a team whose list is one
-shorter but whose count is not tells any addon comparing them that somebody
-is hidden.
+shorter but whose count is not tells any addon comparing them that somebody is
+hidden.
 
 ## Silence
 
-A hidden entity is still an audible one. Sounds are networked by position, not
-by the transmit state of the entity that made them, so `Vanish.Config.silence`
-stops them at the hook that emits them:
+A hidden entity is still an audible one. Sounds travel by position, not by the
+transmit state of the entity that made them, so `Vanish.Config.silence` stops
+them at the hook that emits them:
 
 | Setting | Stops |
 |---|---|
@@ -224,7 +272,7 @@ stops them at the hook that emits them:
 | `chat` | chat messages, echoed to staff and the speaker instead |
 | `blockOutgoingDamage` | damage they deal, which is what the kill feed and damage logs react to |
 | `blockSuicide` | a death that would broadcast an event and drop a named ragdoll |
-| `blockAttacks` | the attack buttons, since firing sends tracers and decals to everyone in range regardless of damage. Set `false` to keep the physgun and toolgun usable |
+| `blockAttacks` | the attack buttons, since firing sends tracers and decals to everyone in range whether the damage lands or not. Set `false` to keep the physgun and toolgun usable |
 
 ## Persistence
 
@@ -241,8 +289,8 @@ carries the state forward too, since leaving is not a decision to be visible.
   `LocalPlayer():Nick()`. Off by default for that reason.
 - Every client is told about the fake disconnect, staff included: the engine
   cannot send a game event to a subset of clients.
-- Doors opening, props moving and buttons being pressed still happen, and
-  props spawned while vanished stay visible.
+- Doors opening, props moving and buttons being pressed still happen, and props
+  spawned while vanished stay visible.
 - The server console and RCON see the real state. Filtering there was left out
   deliberately: it hides nothing from players, only from co-owners.
 - Addons that cache the player list at join time instead of calling
