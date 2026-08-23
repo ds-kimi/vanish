@@ -40,6 +40,8 @@ local FILES = {
 	"vanish/console/serverinfo.lua",
 	"vanish/console/status.lua",
 	"vanish/console/ping.lua",
+	"vanish/console/users.lua",
+	"vanish/console/stats.lua",
 	"vanish/console/filter.lua",
 
 	"vanish/core/command.lua",

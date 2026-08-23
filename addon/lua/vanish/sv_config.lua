@@ -81,6 +81,13 @@ Vanish.Config.status = {
 	version = "2026.04.29/24 10029 secure",
 	publicAddress = "12.34.567.89",
 	steamID = "[A-1:0(0)] (0)",
+
+	-- A dedicated server's steam.inf carries only PatchVersion, so the two
+	-- numbers the engine prints next to it are read from the engine instead.
+	-- These are the last resort if that fails: run "version" in the server
+	-- console and copy the protocol and build it reports.
+	protocol = 24,
+	build = 0,
 }
 
 -- How the fake disconnect is presented and which server side code it drives.

@@ -1,4 +1,5 @@
 #include "serverinfo.hpp"
+#include "stats_api.hpp"
 
 #include <GarrysMod/InterfacePointers.hpp>
 
@@ -34,12 +35,38 @@ namespace ServerInfo
 		return 1;
 	}
 
+	/// Pushes the engine build number the status line prints beside the patch
+	/// version. A dedicated server's steam.inf carries only PatchVersion, so
+	/// this is the only place the real number can come from.
+	LUA_FUNCTION_STATIC( GetServerVersion )
+	{
+		if( engine_server == nullptr )
+			engine_server = InterfacePointers::VEngineServer( );
+
+		const int version =
+			engine_server != nullptr ? engine_server->GetServerVersion( ) : 0;
+
+		if( version <= 0 )
+		{
+			LUA->PushNil( );
+			return 1;
+		}
+
+		LUA->PushNumber( version );
+		return 1;
+	}
+
 	void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 	{
 		LUA->CreateTable( );
 
 		LUA->PushCFunction( GetSteamID64 );
 		LUA->SetField( -2, "GetSteamID64" );
+
+		LUA->PushCFunction( GetServerVersion );
+		LUA->SetField( -2, "GetServerVersion" );
+
+		Stats::Register( LUA );
 
 		LUA->SetField( GarrysMod::Lua::INDEX_GLOBAL, "vanishinfo" );
 	}

@@ -90,7 +90,7 @@ a ghost with its name and SteamID intact, which is exactly what the
 |---|---|
 | Player entity, weapons, children, ragdoll | `CheckTransmit` hook clears the transmit bit per receiving client |
 | Scoreboards and client `player.GetAll()` | `SV_WriteDeltaHeader` detour turns the leave-PVS header into a delete |
-| `status`, `ping`, `users`, `stats` | command dropped at the netchannel, answered with a filtered listing |
+| `status`, `ping`, `users`, `stats` | command dropped at the netchannel, answered with a filtered listing in the engine's own format |
 | Server-side Lua | the roster, lookup, iterator, spatial search and team counter functions, listed below |
 | A2S_INFO / A2S_PLAYER | `recvfrom` detour answers queries from the visible roster |
 | Client leave notice, client-side addons | a real `player_disconnect` game event goes out, so every client runs its own disconnect path |
@@ -225,6 +225,35 @@ Advanced settings follow in the same file: the blocked command list, the
 transmit refresh interval, and the `status` header fields. By default the
 synthesised `status` reports the server's real version, public address and
 SteamID; set `status.spoof` to `true` to send fixed strings instead.
+
+## Answering, not swallowing
+
+Four commands enumerate players, and all four are dropped before the engine
+sees them. A dropped command has to be answered, because silence is a tell of
+its own: a client that types `users` and gets nothing back knows something ate
+it. Each reply is rebuilt in the engine's own format, taken out of `engine.dll`
+rather than guessed:
+
+| Command | Format |
+|---|---|
+| `status` | the header block, then one row per visible player |
+| `ping` | `Client ping times:` and `%4.0f ms : %s` |
+| `users` | `<slot:userid:"name">`, `%i:%i:"%s"`, `%i users` |
+| `stats` | the column header and one row, player count masked |
+
+`stats` is the awkward one. Only its player count would give anything away, but
+the engine prints the whole row at once, so the row is rebuilt: CPU, throughput
+and map changes come from the engine through the module, uptime and frame rate
+from Lua, and only the count is filtered. Connections since start are counted
+by the addon, so that column resets on a map change while the engine's would
+not.
+
+The version line is the same class of problem. A dedicated server's `steam.inf`
+carries `PatchVersion` and nothing else, so reading the protocol and build from
+it printed `2026.04.29/0 0 secure` against the engine's real
+`2026.04.29/24 10029 secure`. The version string changed the moment somebody
+vanished. The build now comes from `IVEngineServer::GetServerVersion`, with
+`status.protocol` and `status.build` in the config as a last resort.
 
 ## Faking the disconnect
 
