@@ -5,6 +5,7 @@
 #include "vanish/serverinfo.hpp"
 #include "query/lua_api.hpp"
 #include "event/lua_api.hpp"
+#include "userinfo/lua_api.hpp"
 
 namespace global
 {
@@ -20,6 +21,7 @@ GMOD_MODULE_OPEN( )
 	Vanish::ServerInfo::Initialize( LUA );
 	Vanish::Query::LuaAPI::Initialize( LUA );
 	Vanish::Event::LuaAPI::Initialize( LUA );
+	Vanish::UserInfo::LuaAPI::Initialize( LUA );
 	return 0;
 }
 
@@ -30,5 +32,6 @@ GMOD_MODULE_CLOSE( )
 	Vanish::ServerInfo::Deinitialize( LUA );
 	Vanish::Query::LuaAPI::Deinitialize( LUA );
 	Vanish::Event::LuaAPI::Deinitialize( LUA );
+	Vanish::UserInfo::LuaAPI::Deinitialize( LUA );
 	return 0;
 }

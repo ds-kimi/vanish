@@ -43,8 +43,16 @@ hook.Add("PlayerDisconnected", "vanish_cleanup", function(ply)
 	local id = ply:SteamID64()
 	if not id then return end
 
+	-- a real disconnect while vanished is a departure, not a decision to be
+	-- visible again, so the state is carried to the next session
+	if Vanish.Config.persist and Vanish.Vanished[id] then
+		Vanish.Stored[id] = true
+	end
+
 	Vanish.Vanished[id] = nil
 	nextAllowed[id] = nil
+
+	Vanish.SaveState()
 
 	-- entity indices are reused, so stale hidden slots must not outlive the
 	-- player that owned them

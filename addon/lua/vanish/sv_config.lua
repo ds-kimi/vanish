@@ -1,12 +1,5 @@
 Vanish = Vanish or {}
 
--- captured before any override so internal code always sees the real roster
-Vanish.RealGetAll = Vanish.RealGetAll or player.GetAll
-Vanish.RealGetHumans = Vanish.RealGetHumans or player.GetHumans
-Vanish.RealTeamGetPlayers = Vanish.RealTeamGetPlayers or team.GetPlayers
-Vanish.RealFindByClass = Vanish.RealFindByClass or ents.FindByClass
-Vanish.RealEntsGetAll = Vanish.RealEntsGetAll or ents.GetAll
-
 ---@type table<string, boolean> SteamID64 -> vanished
 Vanish.Vanished = Vanish.Vanished or {}
 
@@ -46,6 +39,16 @@ Vanish.Config = {
 
 	-- godmode, noclip, notarget and pass-through collisions while vanished.
 	protect = true,
+
+	-- keep the vanish across a map change, restored before the first spawn.
+	persist = true,
+
+	-- blank the vanished player's userinfo string table entry, the last copy
+	-- of their name and SteamID left on every client. Needs gmsv_vanish.
+	-- Side effect: the entry is global, so the vanished player's own client
+	-- loses its name too, and a HUD printing LocalPlayer():Nick() draws blank
+	-- for them. Off by default for that reason.
+	hideUserinfo = false,
 
 	-- server console tracing. Never sends anything to clients.
 	debug = false,
@@ -102,6 +105,36 @@ Vanish.Config.disconnect = {
 	-- jail, playtime and rank timer handlers, which log nothing and do act on
 	-- a player that is still connected.
 	hookPatterns = {"ulx", "ulib", "log"},
+
+	-- run the same selection of PlayerAuthed and PlayerInitialSpawn handlers
+	-- on unvanish, so a logged departure is followed by a logged return
+	joinHooks = true,
+}
+
+-- What a vanished player stops emitting. Every one of these is networked by
+-- position or by name rather than by the transmit state of the entity, so
+-- hiding the entity alone does not stop any of them.
+Vanish.Config.silence = {
+	-- footsteps, weapon fire, physics impacts
+	sounds = true,
+
+	-- voice chat, staff still hear a vanished player
+	voice = true,
+
+	-- chat messages, echoed to staff and the speaker instead
+	chat = true,
+
+	-- damage they deal, which is what drives the kill feed and damage logs
+	blockOutgoingDamage = true,
+
+	-- suicide, which would broadcast a death and drop a named ragdoll
+	blockSuicide = true,
+
+	-- the attack buttons. Firing sends tracers, muzzle flashes and impact
+	-- decals to everyone in range no matter who fired, so the effects are
+	-- stopped at the input. Set false to keep the physgun and toolgun usable
+	-- while vanished, and accept the effects they draw.
+	blockAttacks = true,
 }
 
 -- What a vanished player is protected from. Every value is restored on

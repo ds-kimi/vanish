@@ -16,10 +16,13 @@ client cooperating.
 | Player entity, weapons, children, ragdoll | `CheckTransmit` hook clears the transmit bit per receiving client |
 | Scoreboards and client `player.GetAll()` | `SV_WriteDeltaHeader` detour turns the leave-PVS header into a delete |
 | `status`, `ping`, `users`, `stats` | command dropped at the netchannel, answered with a filtered listing |
-| Server-side Lua | `player.GetAll`, `player.GetHumans`, `player.GetCount`, `team.GetPlayers`, `ents.FindByClass`, `ents.GetAll` |
+| Server-side Lua | the roster, lookup, iterator, spatial search and team counter functions, listed below |
 | A2S_INFO / A2S_PLAYER | `recvfrom` detour answers queries from the visible roster |
 | Client leave notice, client side addons | a real `player_disconnect` game event is broadcast, so every client runs its own disconnect path |
-| Admin mod logs | the selected server side `PlayerDisconnected` handlers are run for a player that never left |
+| Admin mod logs | the selected server side `PlayerDisconnected` handlers are run for a player that never left, mirrored by the join handlers on unvanish |
+| Footsteps, weapon fire, physics, voice, chat | suppressed at the hook that emits them, since sound and voice are networked by position and name rather than by transmit state |
+| Kill feed, damage logs, death events | damage they deal is blocked, suicide is blocked, and the attack buttons are stripped so no tracer or decal is sent |
+| userinfo string table | optional, blanks the last copy of their name and SteamID left on every client |
 
 Staff listed in `allowed` keep seeing vanished players, and a vanished player
 always sees themselves.
@@ -114,7 +117,8 @@ addon/lua/
   autorun/server/vanish.lua   loads everything in order
   vanish/sv_config.lua        every setting lives here
   vanish/core/                vanish state and the console command
-  vanish/hiding/              entities, the Lua libraries, A2S queries
+  vanish/hiding/              entities, the Lua libraries, A2S queries,
+                              sound, voice, chat, combat, userinfo
   vanish/fake/                the fake disconnect and vanished protections
   vanish/console/             status and ping replies, command filtering
 ```
@@ -130,6 +134,8 @@ filterCommands  -- filter status and ping          (needs gmsv_sourcenet)
 hideFromQueries -- hide from A2S                   (needs gmsv_vanish)
 fakeDisconnect  -- broadcast a fake player_disconnect     (needs gmsv_vanish)
 protect         -- godmode, noclip, notarget, no collisions
+persist         -- keep the vanish across a map change
+hideUserinfo    -- blank the userinfo entry             (needs gmsv_vanish)
 debug           -- server console tracing
 ```
 
@@ -176,12 +182,58 @@ All four are engine level and reachable from Lua - `GodEnable` sets
 consulting `FL_GODMODE`. Individual pieces toggle under
 `Vanish.Config.protection`.
 
+## What server-side Lua sees
+
+Every function that can reach a player without listing the roster is masked,
+because filtering only the list functions leaves each of these wide open:
+
+| Library | Masked |
+|---|---|
+| `player` | `GetAll`, `GetHumans`, `GetCount`, `Iterator`, `GetBySteamID`, `GetBySteamID64`, `GetByAccountID`, `GetByUniqueID`, `GetByID` |
+| `ents` | `GetAll`, `Iterator`, `FindByClass`, `FindByModel`, `FindByName`, `FindInSphere`, `FindInBox`, `FindInCone`, `FindAlongRay` |
+| `team` | `GetPlayers`, `NumPlayers`, `TotalFrags`, `TotalDeaths` |
+
+`player.Iterator` and `ents.Iterator` matter most: they are what addons written
+since 2023 use instead of `GetAll`, and an unfiltered iterator hands out every
+vanished player no matter how well the list functions are masked. The team
+counters matter for the same reason in reverse: a team whose list is one
+shorter but whose count is not tells any addon comparing them that somebody
+is hidden.
+
+## Silence
+
+A hidden entity is still an audible one. Sounds are networked by position, not
+by the transmit state of the entity that made them, so `Vanish.Config.silence`
+stops them at the hook that emits them:
+
+| Setting | Stops |
+|---|---|
+| `sounds` | footsteps, weapon fire, physics impacts, anything the player or their weapons emit |
+| `voice` | voice chat, staff still hear a vanished player |
+| `chat` | chat messages, echoed to staff and the speaker instead |
+| `blockOutgoingDamage` | damage they deal, which is what the kill feed and damage logs react to |
+| `blockSuicide` | a death that would broadcast an event and drop a named ragdoll |
+| `blockAttacks` | the attack buttons, since firing sends tracers and decals to everyone in range regardless of damage. Set `false` to keep the physgun and toolgun usable |
+
+## Persistence
+
+`persist` writes the vanish set to `data/vanish_state.txt` and restores it at
+`PlayerAuthed`, before the first spawn, so the player is hidden without ever
+having been transmitted. A restore is silent: announcing a departure for a
+player nobody has seen yet would invent one. A real disconnect while vanished
+carries the state forward too, since leaving is not a decision to be visible.
+
 ## Limitations
 
-- The `userinfo` string table entry of a vanished player still exists on every
-  client. No client Lua API reads it, which is why `status` is filtered rather
-  than left alone.
-- Chat, voice, and the kill feed are not touched.
+- `hideUserinfo` blanks the string table entry for everybody, the vanished
+  player included, so their own client draws a blank name in any HUD reading
+  `LocalPlayer():Nick()`. Off by default for that reason.
+- Every client is told about the fake disconnect, staff included: the engine
+  cannot send a game event to a subset of clients.
+- Doors opening, props moving and buttons being pressed still happen, and
+  props spawned while vanished stay visible.
+- The server console and RCON see the real state. Filtering there was left out
+  deliberately: it hides nothing from players, only from co-owners.
 - Addons that cache the player list at join time instead of calling
   `player.GetAll()` will still hold a reference.
 

@@ -26,7 +26,10 @@ function player.GetHumans()
 	return Vanish.Filter(Vanish.RealGetHumans())
 end
 
----@return number count of players visible to third-party code
-function player.GetCount()
-	return #player.GetAll()
+---@param ent Entity|nil result of a single entity lookup
+---@return Entity|nil ent the entity itself, nil when it is a vanished player
+function Vanish.Mask(ent)
+	if IsValid(ent) and ent:IsPlayer() and Vanish.IsVanished(ent) then return nil end
+
+	return ent
 end

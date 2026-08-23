@@ -23,7 +23,8 @@ end
 
 ---@param ply Player
 ---@param state boolean
-function Vanish.SetVanished(ply, state)
+---@param silent boolean|nil skip the announcement, for state restored on join
+function Vanish.SetVanished(ply, state, silent)
 	if not IsValid(ply) or not ply:IsPlayer() then return end
 
 	local id = ply:SteamID64()
@@ -35,8 +36,13 @@ function Vanish.SetVanished(ply, state)
 	-- immediately instead of waiting for the periodic refresh
 	Vanish.RefreshTransmit()
 	Vanish.RefreshQuery()
-
+	Vanish.RefreshUserInfo()
 	Vanish.ApplyProtection(ply, state)
+	Vanish.SaveState()
+
+	-- a player hidden before their first spawn was never transmitted to
+	-- anybody, so announcing a departure would invent one
+	if silent then return end
 
 	-- the announcement goes out after the roster is already masked, so any
 	-- handler it reaches sees the same player list clients now have

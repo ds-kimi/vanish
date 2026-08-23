@@ -1,10 +1,4 @@
--- Hides vanished players from the server side entity and team libraries.
-
----@param id number team index
----@return Player[]
-function team.GetPlayers(id)
-	return Vanish.Filter(Vanish.RealTeamGetPlayers(id))
-end
+-- Hides vanished players from the entity library.
 
 ---@param class string
 ---@return Entity[]
@@ -21,4 +15,16 @@ end
 ---@return Entity[]
 function ents.GetAll()
 	return Vanish.Filter(Vanish.RealEntsGetAll())
+end
+
+---@param model string
+---@return Entity[]
+function ents.FindByModel(model)
+	return Vanish.Filter(Vanish.RealFindByModel(model))
+end
+
+---@param name string targetname
+---@return Entity[]
+function ents.FindByName(name)
+	return Vanish.Filter(Vanish.RealFindByName(name))
 end

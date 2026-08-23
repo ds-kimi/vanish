@@ -61,6 +61,8 @@ function Vanish.FakeRejoin(ply)
 		sent = vanishevent.Fire("player_connect", fields)
 	end
 
+	Vanish.RunJoinHooks(ply)
+
 	if Vanish.Config.debug then
 		print(string.format("[vanish] rejoin event for %s sent=%s",
 			ply:Nick(), tostring(sent)))
