@@ -1,0 +1,15 @@
+# premake output
+module/projects/projects/
+*.i64
+*.id0
+*.id1
+*.id2
+*.nam
+*.til
+
+# build artefacts
+*.dll
+*.lib
+*.exp
+*.pdb
+*.obj

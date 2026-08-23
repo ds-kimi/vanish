@@ -1,0 +1,229 @@
+diff --git a/source/netchannel.cpp b/source/netchannel.cpp
+index 33d6fd2..25ecd21 100644
+--- a/source/netchannel.cpp
++++ b/source/netchannel.cpp
+@@ -108,45 +108,33 @@ namespace NetChannel
+ 		return 1;
+ 	}
+ 
++	// CNetChan::m_NetMessages sits at an offset this engine build no longer
++	// matches: reading it crashed the server on every disconnect. The list is
++	// reported as unavailable rather than trusted until the layout is fixed.
++
+ 	LUA_FUNCTION_STATIC( DumpNetMessages )
+ 	{
+-		CNetChan *netchan = Get( LUA, 1 );
+-
+-		std::ostringstream stream;
+-		for( int32_t i = 0; i < netchan->m_NetMessages.Count( ); ++i )
+-		{
+-			if( i != 0 )
+-				stream << '\n';
++		Get( LUA, 1 );
+ 
+-			INetMessage *netmsg = netchan->m_NetMessages.Element( i );
+-			stream << i + 1 << ". " << netmsg->GetName( ) << " (" << netmsg->GetType( ) << ')';
+-		}
+-
+-		LUA->PushString( stream.str( ).c_str( ) );
++		LUA->PushString( "" );
+ 		return 1;
+ 	}
+ 
+ 	LUA_FUNCTION_STATIC( GetNetMessageNum )
+ 	{
+-		CNetChan *netchan = Get( LUA, 1 );
+-
+-		LUA->PushNumber( netchan->m_NetMessages.Count( ) );
++		Get( LUA, 1 );
+ 
++		LUA->PushNumber( 0 );
+ 		return 1;
+ 	}
+ 
+ 	LUA_FUNCTION_STATIC( GetNetMessage )
+ 	{
+-		CNetChan *netchan = Get( LUA, 1 );
++		Get( LUA, 1 );
+ 		LUA->CheckType( 2, GarrysMod::Lua::Type::NUMBER );
+ 
+-		int32_t idx = static_cast<int32_t>( LUA->GetNumber( 2 ) ) - 1;
+-		if( idx < 0 || idx >= netchan->m_NetMessages.Count( ) )
+-			LUA->ThrowError( "invalid netmessage index" );
+-
+-		NetMessage::Push( LUA, netchan->m_NetMessages.Element( idx ), netchan );
+-
+-		return 1;
++		LUA->ThrowError( "netmessage list unavailable on this engine build" );
++		return 0;
+ 	}
+ 
+ 	LUA_FUNCTION_STATIC( Reset )
+diff --git a/source/netmessage.cpp b/source/netmessage.cpp
+index 9fb76a5..157e4eb 100644
+--- a/source/netmessage.cpp
++++ b/source/netmessage.cpp
+@@ -1,4 +1,6 @@
+ #include "netmessage.hpp"
++
++#include <tier0/dbg.h>
+ #include "netmessages.hpp"
+ #include "sn_bf_write.hpp"
+ #include "sn_bf_read.hpp"
+@@ -136,16 +138,12 @@ namespace NetMessage
+ 
+ 	void Destroy( GarrysMod::Lua::ILuaBase *LUA, CNetChan *netchan )
+ 	{
+-		LUA->GetField( GarrysMod::Lua::INDEX_REGISTRY, table_name );
+-
+-		for( int32_t k = 0; k < netchan->m_NetMessages.Count( ); ++k )
+-		{
+-			LUA->PushUserdata( netchan->m_NetMessages[k] );
+-			LUA->PushNil( );
+-			LUA->SetTable( -3 );
+-		}
+-
+-		LUA->Pop( 1 );
++		// CNetChan::m_NetMessages sits at an offset this engine build no longer
++		// matches, so walking it here read a garbage pointer and crashed the
++		// server on every disconnect. Until the layout is corrected the message
++		// list is treated as unavailable rather than trusted; see
++		// NetChannel::GetNetMessageNum, which reports it as empty.
++		( void )netchan;
+ 	}
+ 
+ 	LUA_FUNCTION_STATIC( gc )
+@@ -480,10 +478,13 @@ namespace NetMessage
+ 		if( msg == nullptr )
+ 			LUA->FormattedError( "failed to create object for '%s'", NetMessage::Name );
+ 
++		// engine updates regularly drop or reshape individual message classes;
++		// a missing one must only cost its own Lua constructor, not the module
+ 		if( netmessages_vtables.find( NetMessage::Name ) == netmessages_vtables.end( ) )
+ 		{
+ 			delete msg;
+-			LUA->FormattedError( "failed to find vtable for '%s'", NetMessage::Name );
++			Warning( "[sourcenet] no vtable for '%s', its Lua constructor is disabled\n", NetMessage::Name );
++			return;
+ 		}
+ 
+ 		BuildVTable( netmessages_vtables[NetMessage::Name], msg->GetVTable( ) );
+diff --git a/source/server/gametags.cpp b/source/server/gametags.cpp
+index 8323feb..6a539ea 100644
+--- a/source/server/gametags.cpp
++++ b/source/server/gametags.cpp
+@@ -5,6 +5,7 @@
+ 
+ #include <detouring/classproxy.hpp>
+ 
++#include <tier0/dbg.h>
+ #include <strtools.h>
+ #include <networkstringtabledefs.h>
+ #include <steam/steam_gameserver.h>
+@@ -17,19 +18,33 @@ namespace GameTags
+ 	class CBaseServerProxy : Detouring::ClassProxy<CBaseServer, CBaseServerProxy>
+ 	{
+ 	public:
+-		static void Initialize( GarrysMod::Lua::ILuaBase *LUA )
++		// gametags is an optional feature: its signatures break on every engine
++		// update and a failed scan must not take the whole module down, since
++		// net filtering (the reason people load sourcenet) does not need it
++		static bool Initialize( GarrysMod::Lua::ILuaBase * )
+ 		{
+ 			RecalculateTags_original = FunctionPointers::CBaseServer_RecalculateTags( );
+ 			if( RecalculateTags_original == nullptr )
+-				LUA->ThrowError( "unable to find CBaseServer::RecalculateTags" );
++			{
++				Warning( "[sourcenet] CBaseServer::RecalculateTags not found, SetGameTags disabled\n" );
++				return false;
++			}
+ 
+ 			FunctionPointers::Steam3Server_t Steam3Server = FunctionPointers::Steam3Server( );
+ 			if( Steam3Server == nullptr )
+-				LUA->ThrowError( "unable to find Steam3Server" );
++			{
++				Warning( "[sourcenet] Steam3Server not found, SetGameTags disabled\n" );
++				return false;
++			}
+ 
+ 			gameserver_context = Steam3Server( );
+ 			if( gameserver_context == nullptr )
+-				LUA->ThrowError( "unable to load CSteamGameServerAPIContext interface" );
++			{
++				Warning( "[sourcenet] CSteamGameServerAPIContext not found, SetGameTags disabled\n" );
++				return false;
++			}
++
++			return true;
+ 		}
+ 
+ 		void RecalculateTags( )
+@@ -75,19 +90,27 @@ namespace GameTags
+ 	CSteam3Server *CBaseServerProxy::gameserver_context = nullptr;
+ 	std::string CBaseServerProxy::gametags_substitute;
+ 
++	static bool available = false;
++
+ 	void PreInitialize( GarrysMod::Lua::ILuaBase *LUA )
+ 	{
+-		CBaseServerProxy::Initialize( LUA );
++		available = CBaseServerProxy::Initialize( LUA );
+ 	}
+ 
+ 	void Initialize( GarrysMod::Lua::ILuaBase *LUA )
+ 	{
++		if( !available )
++			return;
++
+ 		LUA->PushCFunction( CBaseServerProxy::SetGameTags );
+ 		LUA->SetField( GarrysMod::Lua::INDEX_GLOBAL, "SetGameTags" );
+ 	}
+ 
+ 	void Deinitialize( GarrysMod::Lua::ILuaBase *LUA )
+ 	{
++		if( !available )
++			return;
++
+ 		CBaseServerProxy::UnHookRecalculateTags( );
+ 
+ 		LUA->PushNil( );
+diff --git a/sourcenet/incoming.lua b/sourcenet/incoming.lua
+index d9954f2..9b04568 100644
+--- a/sourcenet/incoming.lua
++++ b/sourcenet/incoming.lua
+@@ -21,6 +21,15 @@ local function CopyBufferEnd(dst, src)
+ 	dst:WriteBits(data)
+ end
+ 
++-- sourcenet only swaps in the rewritten buffer when this hook returns true.
++-- Filters set this flag so untouched datagrams keep travelling as-is, which
++-- avoids re-encoding traffic through parsers that may not be byte exact.
++INCOMING_MODIFIED = false
++
++function MarkIncomingModified()
++	INCOMING_MODIFIED = true
++end
++
+ local specialmsg
+ local specialhandler = {
+ 	DefaultCopy = function(netchan, read, write)
+@@ -30,6 +39,8 @@ local specialhandler = {
+ }
+ hook.Add("PreProcessMessages", "InFilter", function(netchan, read, write, localchan)
+ 	local totalbits = read:GetNumBitsLeft() + read:GetNumBitsRead()
++	local completed = true
++	INCOMING_MODIFIED = false
+ 
+ 	local islocal = netchan == localchan
+ 	if not game.IsDedicated() and ((islocal and SERVER) or (not islocal and CLIENT)) then
+@@ -118,6 +129,10 @@ hook.Add("PreProcessMessages", "InFilter", function(netchan, read, write, localc
+ 			hook.Call("PreNetChannelShutdown", nil, netchan, "Server Changing Level")
+ 		end
+ 	end
++
++	-- a partially parsed datagram must never replace the original: everything
++	-- past the failure point is missing from the rewritten buffer
++	return INCOMING_MODIFIED and completed
+ end)
+ 
+ function FilterIncomingMessage(msg, func)

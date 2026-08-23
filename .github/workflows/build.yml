@@ -1,0 +1,148 @@
+name: build
+
+on:
+  # no path filter: every commit produces a build, so the published archives
+  # always match the tip of the branch
+  push:
+    branches: ["**"]
+    tags: ["*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # gm_sourcenet is pinned: the patch in patches/ applies to this commit
+  SOURCENET_REPO: https://github.com/danielga/gm_sourcenet.git
+  SOURCENET_REF: b2f2e95155b4e657aefed3991af2ba4cea333221
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+
+    # only win32 is proven: the engine offsets the hooks read were verified
+    # against the x86 Windows engine. Adding a platform means adding a row here
+    # and checking those offsets against that build first.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x86
+            runner: windows-2022
+            platform: win32
+            premake_action: vs2022
+            msbuild_platform: Win32
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Fetch premake5
+        run: |
+          $url = "https://github.com/danielga/garrysmod_common/releases/download/premake-build%2F5.0.0-beta8/premake-5.0.0-beta8-windows.zip"
+          Invoke-WebRequest -Uri $url -OutFile premake5.zip
+          Expand-Archive -Path premake5.zip -DestinationPath premake5
+          "PREMAKE5=$(Resolve-Path premake5/premake5.exe)" >> $env:GITHUB_ENV
+          "GMCOMMON=$(Resolve-Path dependencies/garrysmod_common)" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Check out the patched gm_sourcenet
+        run: |
+          git clone --recursive $env:SOURCENET_REPO upstream/gm_sourcenet
+          git -C upstream/gm_sourcenet checkout --quiet $env:SOURCENET_REF
+          git -C upstream/gm_sourcenet apply "$(Resolve-Path patches/gm_sourcenet-engine-compat.patch)"
+        shell: pwsh
+
+      - name: Build gmsv_vanish
+        working-directory: module/projects
+        run: |
+          & $env:PREMAKE5 --gmcommon=$env:GMCOMMON ${{ matrix.premake_action }}
+          $project = Get-ChildItem -Recurse -Filter gmsv_vanish.vcxproj | Select-Object -First 1
+          if (-not $project) { throw "gmsv_vanish.vcxproj was not generated" }
+          msbuild $project.FullName /p:Configuration=Release /p:Platform=${{ matrix.msbuild_platform }} /m /v:m /nologo
+        shell: pwsh
+
+      - name: Build gmsv_sourcenet
+        working-directory: upstream/gm_sourcenet
+        run: |
+          & $env:PREMAKE5 --gmcommon=$env:GMCOMMON ${{ matrix.premake_action }}
+          $project = Get-ChildItem -Recurse -Filter gmsv_sourcenet.vcxproj | Select-Object -First 1
+          if (-not $project) { throw "gmsv_sourcenet.vcxproj was not generated" }
+          msbuild $project.FullName /p:Configuration=Release /p:Platform=${{ matrix.msbuild_platform }} /m /v:m /nologo
+        shell: pwsh
+
+      # the archive mirrors the garrysmod directory, so installing is a matter
+      # of extracting it over garrysmod/
+      - name: Package
+        run: |
+          $stage = "stage/garrysmod"
+          New-Item -ItemType Directory -Force -Path "$stage/lua/bin" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$stage/addons/vanish" | Out-Null
+
+          foreach ($module in @("gmsv_vanish", "gmsv_sourcenet")) {
+            $name = "${module}_${{ matrix.platform }}.dll"
+            $dll = Get-ChildItem -Recurse -Filter $name |
+              Where-Object { $_.FullName -notlike "*\stage\*" } | Select-Object -First 1
+            if (-not $dll) { throw "$name was not produced" }
+            Copy-Item $dll.FullName "$stage/lua/bin/"
+          }
+
+          Copy-Item -Recurse addon/lua "$stage/addons/vanish/lua"
+
+          # sourcenet ships the Lua half of its netchannel filtering, and the
+          # addon needs the patched copy of it
+          Copy-Item -Recurse upstream/gm_sourcenet/sourcenet "$stage/addons/vanish/lua/sourcenet"
+
+          Copy-Item README.md, LICENSE "$stage/addons/vanish/"
+
+          New-Item -ItemType Directory -Force -Path "$stage/addons/vanish/licenses" | Out-Null
+          Copy-Item upstream/gm_sourcenet/license.txt "$stage/addons/vanish/licenses/gm_sourcenet.txt"
+          Copy-Item licenses/gmsv_spoof.txt "$stage/addons/vanish/licenses/"
+
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path stage/garrysmod -DestinationPath "dist/vanish-gmod-${{ matrix.platform }}.zip"
+        shell: pwsh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanish-gmod-${{ matrix.platform }}
+          path: dist/vanish-gmod-${{ matrix.platform }}.zip
+          if-no-files-found: error
+
+  release:
+    name: Release
+    needs: build
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # one release carries every platform archive the build job produced
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          if [ "$REF_TYPE" = "tag" ]; then
+            tag="$REF_NAME"
+            title="vanish-gmod $REF_NAME"
+          else
+            tag="build-$RUN_NUMBER"
+            title="Build $RUN_NUMBER ($(git rev-parse --short HEAD))"
+          fi
+
+          git log -1 --pretty=format:'%s%n%n%b' > notes.txt
+          gh release create "$tag" dist/*.zip --title "$title" --notes-file notes.txt --latest
