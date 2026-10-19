@@ -78,14 +78,14 @@ Vanish.Config.refreshInterval = 2
 Vanish.Config.status = {
 	spoof = false,
 
-	version = "2026.04.29/24 10029 secure",
-	publicAddress = "12.34.567.89",
+	version = "2026.04.29/24 10119 secure",
+	publicAddress = "203.0.113.7",
 	steamID = "[A-1:0(0)] (0)",
 
-	-- A dedicated server's steam.inf carries only PatchVersion, so the two
-	-- numbers the engine prints next to it are read from the engine instead.
-	-- These are the last resort if that fails: run "version" in the server
-	-- console and copy the protocol and build it reports.
+	-- The engine prints its network protocol as a constant, 24 on current
+	-- builds, and the build is read from the engine through the module. The
+	-- build here is only the last resort if that fails: run "version" in the
+	-- server console and copy the number it reports.
 	protocol = 24,
 	build = 0,
 }

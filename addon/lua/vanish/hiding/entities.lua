@@ -1,13 +1,14 @@
 -- Hides the player entity and everything it owns from other clients.
+--
+-- Only the module can do this. CBasePlayer edicts are FL_EDICT_ALWAYS, so
+-- Entity:SetPreventTransmit never applies to the player itself, and hiding
+-- only their weapons would leave a visible player holding nothing. Without
+-- the module, hideEntities does nothing.
 
 ---@param ply Player
 ---@return Entity[] owned entities that must disappear together with the player
 local function collectOwned(ply)
-	local list = {}
-
-	for _, ent in ipairs(ply:GetChildren()) do
-		list[#list + 1] = ent
-	end
+	local list = ply:GetChildren()
 
 	for _, wep in ipairs(ply:GetWeapons()) do
 		list[#list + 1] = wep
@@ -21,52 +22,39 @@ local function collectOwned(ply)
 	return list
 end
 
----@param ply Player owner whose entities get their transmit state rewritten
----@param viewers Player[] every real player on the server
-local function applyOwner(ply, viewers)
-	local hidden = Vanish.IsVanished(ply)
+---@param ply Player vanished player whose entities join the hidden set
+local function hideOwner(ply)
+	transmitcontrol.SetHidden(ply:EntIndex(), true)
 
 	for _, ent in ipairs(collectOwned(ply)) do
-		if IsValid(ent) then
-			-- owned entities are ordinary edicts, so prevent transmit stops
-			-- them being sent, while the module promotes the resulting
-			-- leave-PVS into a delete so nothing stays dormant client side
-			if Vanish.Config.hideEntities and transmitcontrol then
-				transmitcontrol.SetHidden(ent:EntIndex(), hidden)
-			end
-
-			for _, viewer in ipairs(viewers) do
-				-- staff keep seeing each other, otherwise two vanished admins
-				-- would be unable to work together
-				ent:SetPreventTransmit(viewer,
-					hidden and viewer ~= ply and not Vanish.IsAllowed(viewer))
-			end
-		end
+		if IsValid(ent) then transmitcontrol.SetHidden(ent:EntIndex(), true) end
 	end
 end
 
---- Rebuilds transmit state for every player against every viewer.
+--- Rebuilds the module's hidden set from the current vanish state.
 function Vanish.RefreshTransmit()
-	local viewers = Vanish.RealGetAll()
+	if not Vanish.Config.hideEntities or not transmitcontrol then return end
 
-	local control = Vanish.Config.hideEntities and transmitcontrol or nil
+	-- rebuilt from scratch: entity indices are reused, so nothing from the
+	-- previous pass may survive into this one
+	transmitcontrol.Reset()
 
-	if control then control.Reset() end
+	if not Vanish.IsActive() then return end
 
-	for _, ply in ipairs(viewers) do
-		applyOwner(ply, viewers)
+	for _, ply in ipairs(Vanish.RealGetAll()) do
+		local vanished = Vanish.IsVanished(ply)
 
-		-- CBasePlayer edicts are FL_EDICT_ALWAYS, so their transmit bit is
-		-- cleared by the CheckTransmit hook rather than by prevent transmit
-		if control then
-			control.SetHidden(ply:EntIndex(), Vanish.IsVanished(ply))
-			control.SetExempt(ply:EntIndex(), Vanish.IsAllowed(ply))
+		-- staff see vanished players, and so does every vanished player:
+		-- the hook only spares a receiver its own player entity, and their
+		-- weapons and children have to reach them too
+		transmitcontrol.SetExempt(ply:EntIndex(), vanished or Vanish.IsAllowed(ply))
 
-			if Vanish.Config.debug then
-				print(string.format("[vanish] idx=%i %s hidden=%s exempt=%s",
-					ply:EntIndex(), ply:Nick(), tostring(Vanish.IsVanished(ply)),
-					tostring(Vanish.IsAllowed(ply))))
-			end
+		if vanished then hideOwner(ply) end
+
+		if Vanish.Config.debug then
+			print(string.format("[vanish] idx=%i %s hidden=%s exempt=%s",
+				ply:EntIndex(), ply:Nick(), tostring(vanished),
+				tostring(vanished or Vanish.IsAllowed(ply))))
 		end
 	end
 end
@@ -75,11 +63,13 @@ if Vanish.Config.debug then
 	print(string.format("[vanish] transmitcontrol=%s", tostring(transmitcontrol ~= nil)))
 end
 
-hook.Add("PlayerInitialSpawn", "vanish_transmit_join", Vanish.RefreshTransmit)
-hook.Add("PlayerSpawn", "vanish_transmit_spawn", Vanish.RefreshTransmit)
+local function refreshIfActive()
+	if Vanish.IsActive() then Vanish.RefreshTransmit() end
+end
 
-timer.Create("vanish_transmit_refresh", Vanish.Config.refreshInterval, 0, function()
-	if not Vanish.IsActive() then return end
+-- a joining viewer needs their exemption set, and a respawn hands out new
+-- weapons under new entity indices
+hook.Add("PlayerInitialSpawn", "vanish_transmit_join", refreshIfActive)
+hook.Add("PlayerSpawn", "vanish_transmit_spawn", refreshIfActive)
 
-	Vanish.RefreshTransmit()
-end)
+timer.Create("vanish_transmit_refresh", Vanish.Config.refreshInterval, 0, refreshIfActive)

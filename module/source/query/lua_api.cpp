@@ -25,12 +25,16 @@ namespace Vanish
 				return 0;
 			}
 
-			/// vanishquery.SetPlayerCount( count )
+			/// vanishquery.SetPlayerCount( count, bots )
 			LUA_FUNCTION_STATIC( SetPlayerCount )
 			{
 				LUA->CheckType( 1, GarrysMod::Lua::Type::NUMBER );
+				LUA->CheckType( 2, GarrysMod::Lua::Type::NUMBER );
 
-				Get( ).SetVisibleCount( static_cast<int32_t>( LUA->GetNumber( 1 ) ) );
+				Get( ).SetVisibleCount(
+					static_cast<int32_t>( LUA->GetNumber( 1 ) ),
+					static_cast<int32_t>( LUA->GetNumber( 2 ) ) );
+
 				return 0;
 			}
 
@@ -53,6 +57,44 @@ namespace Vanish
 					static_cast<int32_t>( LUA->GetNumber( 2 ) ),
 					static_cast<float>( LUA->GetNumber( 3 ) ) );
 
+				return 0;
+			}
+
+			///@return number field of the table at index 1, fallback when absent
+			static double NumberField( GarrysMod::Lua::ILuaBase *LUA, const char *name, double fallback )
+			{
+				LUA->GetField( 1, name );
+				const double value = LUA->IsType( -1, GarrysMod::Lua::Type::NUMBER )
+					? LUA->GetNumber( -1 ) : fallback;
+
+				LUA->Pop( 1 );
+				return value;
+			}
+
+			/// vanishquery.SetConVars( { sv_visiblemaxplayers = n, sv_location = s,
+			///     sv_max_queries_sec = n, sv_max_queries_window = n,
+			///     sv_max_queries_sec_global = n } )
+			LUA_FUNCTION_STATIC( SetConVars )
+			{
+				LUA->CheckType( 1, GarrysMod::Lua::Type::TABLE );
+
+				ConVars settings;
+				settings.visible_max_players = static_cast<int32_t>(
+					NumberField( LUA, "sv_visiblemaxplayers", settings.visible_max_players ) );
+				settings.queries_per_second = static_cast<float>(
+					NumberField( LUA, "sv_max_queries_sec", settings.queries_per_second ) );
+				settings.queries_window = static_cast<float>(
+					NumberField( LUA, "sv_max_queries_window", settings.queries_window ) );
+				settings.queries_global = static_cast<float>(
+					NumberField( LUA, "sv_max_queries_sec_global", settings.queries_global ) );
+
+				LUA->GetField( 1, "sv_location" );
+				if( LUA->IsType( -1, GarrysMod::Lua::Type::STRING ) )
+					settings.location = LUA->GetString( -1 );
+
+				LUA->Pop( 1 );
+
+				Get( ).SetSettings( settings );
 				return 0;
 			}
 
@@ -92,6 +134,9 @@ namespace Vanish
 
 				LUA->PushCFunction( SetSecure );
 				LUA->SetField( -2, "SetSecure" );
+
+				LUA->PushCFunction( SetConVars );
+				LUA->SetField( -2, "SetConVars" );
 
 				LUA->SetField( GarrysMod::Lua::INDEX_GLOBAL, "vanishquery" );
 			}

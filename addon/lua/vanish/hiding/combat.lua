@@ -21,14 +21,6 @@ hook.Add("CanPlayerSuicide", "vanish_combat_suicide", function(ply)
 	if Vanish.IsVanished(ply) then return false end
 end)
 
--- nothing may target a vanished player either, which covers gamemodes that
--- pick victims from their own bookkeeping instead of a trace
-hook.Add("PlayerShouldTakeDamage", "vanish_combat_incoming", function(ply)
-	if not Vanish.Config.protect then return end
-
-	if Vanish.IsVanished(ply) then return false end
-end)
-
 -- firing leaves tracers, muzzle flashes, impact effects and decals, all sent
 -- as temp entities to everyone in range regardless of who fired them. Blocking
 -- the attack buttons is what stops the effects, not blocking the damage.

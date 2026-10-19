@@ -5,6 +5,7 @@
 
 #include "socket_filter.hpp"
 #include "challenge.hpp"
+#include "rate_limit.hpp"
 #include "replies.hpp"
 #include "state.hpp"
 
@@ -64,6 +65,10 @@ namespace Vanish
 			// connectionless packets start with this, then a one byte type
 			const int32_t CONNECTIONLESS = -1;
 			const size_t HEADER_SIZE = 5;
+
+			// queries answered per engine read before the rest of the queue is
+			// left for the next one, so a flood cannot hold the frame forever
+			const int MAX_ANSWERED_PER_READ = 32;
 
 			const char A2S_INFO = 'T';
 			const char A2S_PLAYER = 'U';
@@ -154,17 +159,32 @@ namespace Vanish
 				int32_t socket, char *buffer, int32_t length, int32_t flags,
 				sockaddr *from, int32_t *fromlen )
 			{
-				const int32_t received =
-					original_recvfrom( socket, buffer, length, flags, from, fromlen );
+				// every engine socket reads through here, and only the game
+				// socket's queries can be answered from the game port
+				if( static_cast<SOCKET>( socket ) != game_socket || from == nullptr || fromlen == nullptr )
+					return original_recvfrom( socket, buffer, length, flags, from, fromlen );
 
-				if( received <= 0 || !Get( ).IsEnabled( ) )
-					return received;
+				// an answered query is followed by the next datagram rather
+				// than by "would block", which the engine takes as an empty
+				// socket and stops reading for the frame
+				for( int answered = 0; answered < MAX_ANSWERED_PER_READ; ++answered )
+				{
+					const int32_t received =
+						original_recvfrom( socket, buffer, length, flags, from, fromlen );
 
-				const char type = QueryType( buffer, received );
-				if( type == 0 )
-					return received;
+					if( received <= 0 || !Get( ).IsEnabled( ) )
+						return received;
 
-				Reply( from, *fromlen, type, HasChallenge( buffer, received, type, from ) );
+					const char type = QueryType( buffer, received );
+					if( type == 0 )
+						return received;
+
+					// over the limit the query is dropped unanswered, as the
+					// engine would drop it
+					if( RateLimit::Allow( from ) )
+						Reply( from, *fromlen, type, HasChallenge( buffer, received, type, from ) );
+				}
+
 				return Swallow( );
 			}
 

@@ -42,7 +42,9 @@ function Vanish.SendStats(ply)
 		connects))
 end
 
-hook.Add("PlayerAuthed", "vanish_stats_connects", function()
+-- PlayerConnect, not PlayerAuthed: the engine counts bots, and bots are
+-- never authed
+hook.Add("PlayerConnect", "vanish_stats_connects", function()
 	connects = connects + 1
 end)
 

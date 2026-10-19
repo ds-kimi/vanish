@@ -71,6 +71,7 @@ module/source/
   query/replies.*            builds the A2S_INFO and A2S_PLAYER payloads
   query/socket_filter.*      the recvfrom detour that answers them
   query/challenge.*          the challenge a query must echo before it is answered
+  query/rate_limit.*         the engine's per address and global query limits
   query/lua_api.*            the vanishquery table
   vanish/game_server.*       the engine's IServer, found through RTTI on Linux
   platform/                  Linux only: code patching, ELF relocations and RTTI
@@ -128,6 +129,11 @@ stripped down to a few hundred entries, but RTTI and relocations survive.
   anything past them in `IFileSystem` must not be called through the SDK
   header. `replies.cpp` reads the slot from the engine's own tag code, and
   reads `steam.inf` with `IBaseFileSystem::Read` rather than `ReadLine`.
+- **No usable `ICvar`.** garrysmod_common asks vstdlib for `VEngineCvar004`,
+  which `libvstdlib.so` does not export, and calling through the
+  `VEngineCvar007` it does export with the SDK layout crashes the server. The
+  convars the query replies follow are read by Lua with `GetConVar` and handed
+  over through `vanishquery.SetConVars` instead, on every platform.
 - **`GetServerVersion` returns 0**, since a dedicated server's `steam.inf` has
   no `ServerVersion`. The build `status` prints comes from `build_number( )`,
   found through its one call inside the status command.
@@ -140,13 +146,16 @@ script over `engine.so` before relying on them.
 ```
 addon/lua/vanish/
   sv_config.lua      every setting, basic first and advanced below
-  core/              state.lua, command.lua
-  hiding/            entities.lua, lua_players.lua, lua_entities.lua, queries.lua
-  console/           netchannel.lua, serverinfo.lua, status.lua, ping.lua, filter.lua
+  core/              state, the command, persistence, the captured originals
+  hiding/            entities, the Lua libraries, queries, sound, voice, chat,
+                     combat, userinfo
+  fake/              the fake disconnect and rejoin, and the protections
+  console/           status, ping, users and stats replies, and the filter
 ```
 
 `core` owns the state, `hiding` makes a player disappear from one surface each,
-and `console` deals with what the engine would otherwise print. Load order is
+`fake` stages the departure, and `console` deals with what the engine would
+otherwise print. Load order is
 declared once, in `autorun/server/vanish.lua`.
 
 ## Lua style

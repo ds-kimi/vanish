@@ -15,11 +15,8 @@ local FILES = {
 	"vanish/hiding/entities.lua",
 	"vanish/hiding/lua_players.lua",
 	"vanish/hiding/lua_lookup.lua",
-	"vanish/hiding/lua_lookup_id.lua",
-	"vanish/hiding/lua_iterator.lua",
 	"vanish/hiding/lua_entities.lua",
 	"vanish/hiding/lua_find.lua",
-	"vanish/hiding/lua_team.lua",
 	"vanish/hiding/queries.lua",
 	"vanish/hiding/userinfo.lua",
 

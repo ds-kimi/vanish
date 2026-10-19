@@ -52,7 +52,9 @@ hook.Add("PlayerDisconnected", "vanish_cleanup", function(ply)
 	Vanish.Vanished[id] = nil
 	nextAllowed[id] = nil
 
-	Vanish.SaveState()
+	-- the player is still listed during this hook, and must not count as
+	-- one who stayed and unvanished
+	Vanish.SaveState(ply)
 
 	-- entity indices are reused, so stale hidden slots must not outlive the
 	-- player that owned them

@@ -39,8 +39,8 @@ end
 --- Runs the selected handlers of one hook for a player whose real connection
 --- state never changed.
 ---@param event string hook name
----@param ply Player
-function Vanish.RunFakeHooks(event, ply)
+---@param ... any the arguments the engine passes to this hook
+function Vanish.RunFakeHooks(event, ...)
 	if Vanish.Config.disconnect.hooks == "none" then return end
 
 	-- guards the addon's own cleanup and anything else that has to tell a
@@ -51,9 +51,9 @@ function Vanish.RunFakeHooks(event, ply)
 		-- object hooks are stored keyed by the object and called as methods
 		local ok, err
 		if istable(identifier) then
-			ok, err = pcall(fn, identifier, ply)
+			ok, err = pcall(fn, identifier, ...)
 		else
-			ok, err = pcall(fn, ply)
+			ok, err = pcall(fn, ...)
 		end
 
 		if not ok and Vanish.Config.debug then

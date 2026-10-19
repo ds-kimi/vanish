@@ -32,6 +32,10 @@ function Vanish.SetVanished(ply, state, silent)
 
 	Vanish.Vanished[id] = state or nil
 
+	-- player.Iterator and ents.Iterator cache the masked lists until an
+	-- entity is created or removed, and every Lua lookup is built on them
+	if InvalidateInternalEntityCache then InvalidateInternalEntityCache(true) end
+
 	-- transmit flags are per-viewer and survive nothing, so they are rebuilt
 	-- immediately instead of waiting for the periodic refresh
 	Vanish.RefreshTransmit()

@@ -15,6 +15,8 @@ function Vanish.RunJoinHooks(ply)
 
 	-- both chains run because mods split join logging between them: the
 	-- authed pass has the SteamID, the spawn pass has the player entity
-	Vanish.RunFakeHooks("PlayerAuthed", ply)
-	Vanish.RunFakeHooks("PlayerInitialSpawn", ply)
+	-- with the arguments the engine passes: handlers log the SteamID they
+	-- are handed, and a fake join is never a map transition
+	Vanish.RunFakeHooks("PlayerAuthed", ply, ply:SteamID(), ply:UniqueID())
+	Vanish.RunFakeHooks("PlayerInitialSpawn", ply, false)
 end

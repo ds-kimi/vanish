@@ -96,6 +96,7 @@ hook.Add("PreProcessMessages", "InFilter", function(netchan, read, write, localc
 					Msg("Unknown outgoing message: " .. msg .. "\n")
 						
 					write:Seek(totalbits)
+					completed = false
 
 					break
 				end
@@ -107,6 +108,7 @@ hook.Add("PreProcessMessages", "InFilter", function(netchan, read, write, localc
 		local success, ret = xpcall(func, debug.traceback, netchan, read, write)
 		if not success then
 			print(ret)
+			completed = false
 
 			break
 		elseif ret == false then
@@ -114,6 +116,7 @@ hook.Add("PreProcessMessages", "InFilter", function(netchan, read, write, localc
 			Msg("Failed to filter message " .. msg .. "\n")
 
 			write:Seek(totalbits)
+			completed = false
 
 			break
 		end

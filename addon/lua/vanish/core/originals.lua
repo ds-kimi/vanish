@@ -1,24 +1,17 @@
 -- Captures every library function the addon overrides, before it overrides
 -- them. Internal code calls these so masking never hides a player from the
--- addon itself, and a missing entry means the running build has no such
--- function: the matching override then never installs.
+-- addon itself.
+--
+-- Only engine functions are listed. team.*, player.GetBySteamID and the other
+-- Lua lookups are built on player.Iterator, whose cache is filled from the
+-- masked player.GetAll, so they need no override of their own.
 
 Vanish.RealGetAll = Vanish.RealGetAll or player.GetAll
 Vanish.RealGetHumans = Vanish.RealGetHumans or player.GetHumans
-Vanish.RealPlayerIterator = Vanish.RealPlayerIterator or player.Iterator
-Vanish.RealGetBySteamID = Vanish.RealGetBySteamID or player.GetBySteamID
-Vanish.RealGetBySteamID64 = Vanish.RealGetBySteamID64 or player.GetBySteamID64
-Vanish.RealGetByAccountID = Vanish.RealGetByAccountID or player.GetByAccountID
-Vanish.RealGetByUniqueID = Vanish.RealGetByUniqueID or player.GetByUniqueID
 Vanish.RealGetByID = Vanish.RealGetByID or player.GetByID
-
-Vanish.RealTeamGetPlayers = Vanish.RealTeamGetPlayers or team.GetPlayers
-Vanish.RealTeamNumPlayers = Vanish.RealTeamNumPlayers or team.NumPlayers
-Vanish.RealTeamTotalFrags = Vanish.RealTeamTotalFrags or team.TotalFrags
-Vanish.RealTeamTotalDeaths = Vanish.RealTeamTotalDeaths or team.TotalDeaths
+Vanish.RealPlayer = Vanish.RealPlayer or Player
 
 Vanish.RealEntsGetAll = Vanish.RealEntsGetAll or ents.GetAll
-Vanish.RealEntsIterator = Vanish.RealEntsIterator or ents.Iterator
 Vanish.RealFindByClass = Vanish.RealFindByClass or ents.FindByClass
 Vanish.RealFindByModel = Vanish.RealFindByModel or ents.FindByModel
 Vanish.RealFindByName = Vanish.RealFindByName or ents.FindByName

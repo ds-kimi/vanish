@@ -21,14 +21,18 @@ namespace ServerInfo
 	static IVEngineServer *engine_server = nullptr;
 
 	/// Pushes the game server SteamID as a string, since Lua numbers lose
-	/// precision above 2^53 and every caller only formats it anyway.
+	/// precision above 2^53 and every caller only formats it anyway. Nil
+	/// until Steam is logged on, which is when status says "not logged in".
 	LUA_FUNCTION_STATIC( GetSteamID64 )
 	{
 		if( engine_server == nullptr )
 			engine_server = InterfacePointers::VEngineServer( );
 
-		const CSteamID *steamid =
-			engine_server != nullptr ? engine_server->GetGameServerSteamID( ) : nullptr;
+		ISteamGameServer *steam = SteamGameServer( );
+		const bool logged_on = steam != nullptr && steam->BLoggedOn( );
+
+		const CSteamID *steamid = logged_on && engine_server != nullptr
+			? engine_server->GetGameServerSteamID( ) : nullptr;
 
 		if( steamid == nullptr )
 		{
@@ -136,6 +140,29 @@ namespace ServerInfo
 		return 1;
 	}
 
+	/// Pushes the public address Steam sees, which status prints beside the
+	/// bound one, or nil while Steam does not know it.
+	LUA_FUNCTION_STATIC( GetPublicIP )
+	{
+		ISteamGameServer *steam = SteamGameServer( );
+		const SteamIPAddress_t address =
+			steam != nullptr ? steam->GetPublicIP( ) : SteamIPAddress_t( );
+
+		if( !address.IsSet( ) || address.m_eType != k_ESteamIPTypeIPv4 )
+		{
+			LUA->PushNil( );
+			return 1;
+		}
+
+		const uint32_t ip = address.m_unIPv4;
+		char text[16] = { 0 };
+		V_snprintf( text, sizeof( text ), "%u.%u.%u.%u",
+			( ip >> 24 ) & 0xFF, ( ip >> 16 ) & 0xFF, ( ip >> 8 ) & 0xFF, ip & 0xFF );
+
+		LUA->PushString( text );
+		return 1;
+	}
+
 	void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 	{
 		LUA->CreateTable( );
@@ -148,6 +175,9 @@ namespace ServerInfo
 
 		LUA->PushCFunction( IsSecure );
 		LUA->SetField( -2, "IsSecure" );
+
+		LUA->PushCFunction( GetPublicIP );
+		LUA->SetField( -2, "GetPublicIP" );
 
 		Stats::Register( LUA );
 

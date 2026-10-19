@@ -120,6 +120,12 @@ tools still see the vanished player. Every other surface stays hidden.
 It ships enabled. If your server is public, decide deliberately whether to keep
 it that way.
 
+The filtered replies follow the same rules as the engine's: the challenge
+handshake, `sv_visiblemaxplayers`, the `sv_location` tag, and the
+`sv_max_queries_sec`, `sv_max_queries_window` and `sv_max_queries_sec_global`
+rate limits. An address that floods queries stops getting answers at the same
+point either way.
+
 ## Why a module is needed
 
 `Entity:SetPreventTransmit` does not hide players. `CBasePlayer` edicts are
@@ -326,8 +332,9 @@ message even though the player stays visible to them.
 collisions, restored on unvanish from the state captured when they vanished.
 All four are engine level and reachable from Lua: `GodEnable` sets
 `FL_GODMODE`, `SetMoveType` writes `MOVETYPE_NOCLIP`. No module is involved.
-`EntityTakeDamage` also blocks code that damages players without consulting
-`FL_GODMODE`. Individual pieces toggle under `Vanish.Config.protection`.
+With `protection.godmode` on, `EntityTakeDamage` also blocks code that damages
+players without consulting `FL_GODMODE`. Individual pieces toggle under
+`Vanish.Config.protection`.
 
 ## What server-side Lua sees
 
@@ -336,16 +343,17 @@ because filtering only the list functions leaves each of these wide open:
 
 | Library | Masked |
 |---|---|
-| `player` | `GetAll`, `GetHumans`, `GetCount`, `Iterator`, `GetBySteamID`, `GetBySteamID64`, `GetByAccountID`, `GetByUniqueID`, `GetByID` |
+| `player` | `GetAll`, `GetHumans`, `GetCount`, `Iterator`, `GetBySteamID`, `GetBySteamID64`, `GetByAccountID`, `GetByUniqueID`, `GetByID`, and the global `Player(userid)` |
 | `ents` | `GetAll`, `Iterator`, `FindByClass`, `FindByModel`, `FindByName`, `FindInSphere`, `FindInBox`, `FindInCone`, `FindAlongRay` |
 | `team` | `GetPlayers`, `NumPlayers`, `TotalFrags`, `TotalDeaths` |
 
-`player.Iterator` and `ents.Iterator` matter most. They are what addons written
-since 2023 use instead of `GetAll`, and an unfiltered iterator hands out every
-vanished player no matter how well the list functions are masked. The team
-counters matter for the same reason in reverse: a team whose list is one
-shorter but whose count is not tells any addon comparing them that somebody is
-hidden.
+Only the engine functions are replaced. `player.Iterator` and `ents.Iterator`
+cache the result of `player.GetAll` and `ents.GetAll`, and the team functions
+and the `player.GetBy*` lookups are written in Lua on top of `player.Iterator`.
+Masking the two list functions and clearing the iterator cache on every toggle
+covers all of them, and they keep returning exactly what they return for a
+player who is not there: `false` from the Lua lookups, `NULL` from the engine
+ones.
 
 ## Silence
 
@@ -364,9 +372,10 @@ them at the hook that emits them:
 
 ## Persistence
 
-`persist` writes the vanish set to `data/vanish_state.txt` and restores it at
-`PlayerAuthed`, before the first spawn, so the player is hidden without ever
-having been transmitted. A restore is silent: announcing a departure for a
+`persist` writes the vanish set to `data/vanish_state.txt`, one SteamID64 per
+line, and restores it at `PlayerAuthed` or `PlayerInitialSpawn`, whichever
+comes first. Authing normally comes before the first spawn, so the player is
+hidden without ever having been transmitted. A restore is silent: announcing a departure for a
 player nobody has seen yet would invent one. A real disconnect while vanished
 carries the state forward too, since leaving is not a decision to be visible.
 

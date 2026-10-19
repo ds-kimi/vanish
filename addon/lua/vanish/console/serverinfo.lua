@@ -1,5 +1,9 @@
 -- Reads the header values the engine prints in status.
 
+-- steam.inf does not change while the server runs, and a dedicated server's
+-- copy carries PatchVersion and nothing else
+local PATCH = string.match(file.Read("steam.inf", "GAME") or "", "PatchVersion=([%w%.]+)") or "unknown"
+
 ---@param id64 string game server SteamID as a decimal string
 ---@return string rendered SteamID3 form, matching the engine's status line
 local function renderSteamID(id64)
@@ -16,43 +20,55 @@ local function renderSteamID(id64)
 	return string.format("[%s-%i:%i(%i)] (%s)", letter, universe, account, instance, id64)
 end
 
----@return string version line in the engine's "patch/protocol build secure" form
+---@return string version in the engine's "patch/protocol build secure" form
 local function readVersion()
 	local cfg = Vanish.Config.status
-	local inf = file.Read("steam.inf", "GAME") or ""
 
-	local patch = string.match(inf, "PatchVersion=([%w%.]+)") or "unknown"
-
-	-- a dedicated server's steam.inf carries PatchVersion and nothing else, so
-	-- the two numbers printed beside it have to come from the engine. Reading
-	-- them from the file alone printed "patch/0 0" against the engine's real
-	-- "patch/24 10029", which changed the moment somebody vanished
-	local protocol = tonumber(string.match(inf, "ProtocolVersion=(%d+)")) or cfg.protocol
-	local build = tonumber(string.match(inf, "ClientVersion=(%d+)"))
-		or (vanishinfo and vanishinfo.GetServerVersion())
-		or cfg.build
+	-- the engine prints its network protocol as a constant, and the build
+	-- through build_number( ), which only the module can reach
+	local build = vanishinfo and vanishinfo.GetServerVersion() or cfg.build
 
 	-- the engine prints "secure" or "insecure" from the session's VAC state;
 	-- an older module that cannot say is assumed secure
 	local secure = vanishinfo and vanishinfo.IsSecure and vanishinfo.IsSecure()
 
-	return string.format("%s/%i %i %s", patch, protocol, build,
+	return string.format("%s/%i %i %s", PATCH, cfg.protocol, build,
 		secure == false and "insecure" or "secure")
 end
 
---- Reads the values the engine prints in status but Lua cannot reach.
----@return table info version, publicAddress and steamID strings
+---@return string address the address the engine reports itself bound to
+local function boundAddress()
+	local ip = GetConVar("ip"):GetString()
+
+	-- an unset ip makes the engine bind to its resolved host address, which
+	-- game.GetIPAddress reports as well
+	if ip == "" or ip == "localhost" then
+		ip = string.match(game.GetIPAddress(), "^[^:]+") or ip
+	end
+
+	return string.format("%s:%i", ip, GetConVar("hostport"):GetInt())
+end
+
+--- Reads the values the engine prints in status but Lua cannot reach. Each
+--- field is nil where the engine prints nothing for it.
+---@return table info version, address, publicAddress and steamID strings
 function Vanish.ServerInfo()
 	local cfg = Vanish.Config.status
-	if cfg.spoof then return cfg end
+	if cfg.spoof then
+		return {version = cfg.version, address = boundAddress(),
+			publicAddress = cfg.publicAddress, steamID = cfg.steamID}
+	end
 
-	local public = GetConVar("net_public_adr")
+	-- a LAN server runs without Steam authentication, and the engine then
+	-- prints neither the public address nor a steamid line
+	local lan = GetConVar("sv_lan"):GetBool()
 	local id64 = vanishinfo and vanishinfo.GetSteamID64()
 
 	return {
 		version = readVersion(),
-		publicAddress = public and public:GetString() ~= "" and public:GetString()
-			or cfg.publicAddress,
-		steamID = id64 and renderSteamID(id64) or cfg.steamID,
+		address = boundAddress(),
+		publicAddress = not lan and vanishinfo and vanishinfo.GetPublicIP
+			and vanishinfo.GetPublicIP() or nil,
+		steamID = not lan and (id64 and renderSteamID(id64) or "not logged in") or nil,
 	}
 end

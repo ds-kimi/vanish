@@ -19,8 +19,6 @@
 #include <eiface.h>
 #include <iserver.h>
 #include <filesystem.h>
-#include <icvar.h>
-#include <convar.h>
 #include <steam/steamclientpublic.h>
 
 #include <cstring>
@@ -49,8 +47,6 @@ namespace Vanish
 			static IVEngineServer *engine_server = nullptr;
 			static IServerGameDLL *gamedll = nullptr;
 			static IFileSystem *filesystem = nullptr;
-			static ConVar *visible_max_players = nullptr;
-			static ConVar *server_location = nullptr;
 
 			// the game's VERSION number, which only Lua is given
 			static int32_t lua_version = 0;
@@ -174,11 +170,11 @@ namespace Vanish
 
 				// the engine shows at most the first five characters, and only
 				// once more than one is set
-				const char *location = server_location != nullptr ? server_location->GetString( ) : "";
-				if( std::strlen( location ) > 1 )
+				const std::string &location = Get( ).Settings( ).location;
+				if( location.size( ) > 1 )
 				{
 					tags += " loc:";
-					tags += std::string( location ).substr( 0, 5 );
+					tags += location.substr( 0, 5 );
 				}
 
 				if( lua_version != 0 )
@@ -229,13 +225,6 @@ namespace Vanish
 				gamedll = InterfacePointers::ServerGameDLL( );
 				filesystem = InterfacePointers::FileSystemServer( );
 
-				ICvar *cvar = InterfacePointers::Cvar( );
-				if( cvar != nullptr )
-				{
-					visible_max_players = cvar->FindVar( "sv_visiblemaxplayers" );
-					server_location = cvar->FindVar( "sv_location" );
-				}
-
 				return server != nullptr && engine_server != nullptr
 					&& gamedll != nullptr && filesystem != nullptr;
 			}
@@ -261,8 +250,7 @@ namespace Vanish
 			///@return slot count to advertise, honouring sv_visiblemaxplayers
 			static int32_t VisibleMaxPlayers( )
 			{
-				const int32_t visible =
-					visible_max_players != nullptr ? visible_max_players->GetInt( ) : -1;
+				const int32_t visible = Get( ).Settings( ).visible_max_players;
 
 				return visible <= 0 || visible > max_clients ? max_clients : visible;
 			}
@@ -282,7 +270,7 @@ namespace Vanish
 				out.WriteShort( appid );
 				out.WriteByte( state.VisibleCount( ) );
 				out.WriteByte( VisibleMaxPlayers( ) );
-				out.WriteByte( server->GetNumFakeClients( ) );
+				out.WriteByte( state.VisibleBots( ) );
 				out.WriteByte( SERVER_TYPE_DEDICATED );
 				out.WriteByte( OPERATING_SYSTEM );
 				out.WriteByte( server->GetPassword( ) != nullptr ? 1 : 0 );

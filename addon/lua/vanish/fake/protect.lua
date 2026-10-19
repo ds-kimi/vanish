@@ -73,7 +73,9 @@ end)
 -- gamemodes that damage players without consulting FL_GODMODE, and anything
 -- calling TakeDamage directly, are stopped here instead
 hook.Add("EntityTakeDamage", "vanish_protect_damage", function(target)
-	if Vanish.Config.protect and Vanish.IsVanished(target) then return true end
+	if not Vanish.Config.protect or not Vanish.Config.protection.godmode then return end
+
+	if Vanish.IsVanished(target) then return true end
 end)
 
 hook.Add("PlayerDisconnected", "vanish_protect_cleanup", function(ply)

@@ -7,7 +7,8 @@ namespace Vanish
 		State::State( ) :
 			m_enabled( false ),
 			m_secure( true ),
-			m_visible_count( 0 )
+			m_visible_count( 0 ),
+			m_visible_bots( 0 )
 		{
 			m_players.reserve( MAX_PLAYERS );
 		}
@@ -37,9 +38,15 @@ namespace Vanish
 			return m_visible_count;
 		}
 
-		void State::SetVisibleCount( int32_t count )
+		int32_t State::VisibleBots( ) const
+		{
+			return m_visible_bots;
+		}
+
+		void State::SetVisibleCount( int32_t count, int32_t bots )
 		{
 			m_visible_count = count < 0 ? 0 : count;
+			m_visible_bots = bots < 0 ? 0 : ( bots > m_visible_count ? m_visible_count : bots );
 		}
 
 		void State::ClearPlayers( )
@@ -65,6 +72,16 @@ namespace Vanish
 		const std::vector<PlayerEntry> &State::Players( ) const
 		{
 			return m_players;
+		}
+
+		const ConVars &State::Settings( ) const
+		{
+			return m_settings;
+		}
+
+		void State::SetSettings( const ConVars &settings )
+		{
+			m_settings = settings;
 		}
 
 		State &Get( )
