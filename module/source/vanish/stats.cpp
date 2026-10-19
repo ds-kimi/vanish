@@ -1,31 +1,23 @@
 #include "stats.hpp"
+#include "game_server.hpp"
 
-#include <GarrysMod/InterfacePointers.hpp>
+#include <Platform.hpp>
 
 #include <iserver.h>
 
 #if defined SYSTEM_WINDOWS
 #include <Windows.h>
+#else
+#include <time.h>
 #endif
 
 namespace Vanish
 {
 	namespace Stats
 	{
-		///@return the game server interface, nullptr when unavailable
-		static IServer *Server( )
-		{
-			static IServer *server = nullptr;
-
-			if( server == nullptr )
-				server = InterfacePointers::Server( );
-
-			return server;
-		}
-
 		bool NetStats( float &in, float &out )
 		{
-			IServer *server = Server( );
+			IServer *server = GameServer::Get( );
 			if( server == nullptr )
 				return false;
 
@@ -35,7 +27,7 @@ namespace Vanish
 
 		int SpawnCount( )
 		{
-			IServer *server = Server( );
+			IServer *server = GameServer::Get( );
 
 			return server != nullptr ? server->GetSpawnCount( ) : -1;
 		}
@@ -78,7 +70,34 @@ namespace Vanish
 
 #else
 
-			return 0.0;
+			static double last_wall = 0.0, last_cpu = 0.0;
+
+			timespec wall_time, cpu_time;
+			if( clock_gettime( CLOCK_MONOTONIC, &wall_time ) != 0 ||
+				clock_gettime( CLOCK_PROCESS_CPUTIME_ID, &cpu_time ) != 0 )
+				return 0.0;
+
+			const auto seconds = []( const timespec &time ) -> double {
+				return static_cast<double>( time.tv_sec ) + time.tv_nsec / 1e9;
+			};
+
+			const double wall = seconds( wall_time );
+			const double cpu = seconds( cpu_time );
+
+			// same baseline rule as the Windows branch above
+			const double wall_delta = wall - last_wall;
+			const double cpu_delta = cpu - last_cpu;
+			const bool primed = last_wall != 0.0 && wall > last_wall;
+
+			last_wall = wall;
+			last_cpu = cpu;
+
+			if( !primed )
+				return 0.0;
+
+			const double percent = 100.0 * cpu_delta / wall_delta;
+
+			return percent < 0.0 ? 0.0 : ( percent > 100.0 ? 100.0 : percent );
 
 #endif
 		}

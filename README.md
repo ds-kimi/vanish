@@ -18,6 +18,7 @@
   <a href="https://github.com/ds-kimi/vanish"><img src="https://img.shields.io/github/stars/ds-kimi/vanish?style=for-the-badge&amp;logo=github" alt="GitHub stars"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-blue?style=for-the-badge" alt="BSD 3-Clause License"></a>
   <img src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&amp;logo=windows&amp;logoColor=white" alt="Windows">
+  <img src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&amp;logo=linux&amp;logoColor=black" alt="Linux">
   <img src="https://img.shields.io/badge/Garry%27s%20Mod-2581d8?style=for-the-badge" alt="Garry's Mod">
 </p>
 
@@ -133,10 +134,10 @@ header to a delete for hidden entities, per receiving client.
 
 ## Requirements
 
-- Garry's Mod dedicated server, **Windows 32-bit (`win32`) only for now**.
-  Linux and 64-bit builds are coming: the engine offsets the hooks rely on were
-  verified against the x86 Windows engine, and each other platform needs its own
-  check before it can be trusted.
+- Garry's Mod dedicated server, **32-bit**: Windows (`win32`) or Linux
+  (`linux`). 64-bit builds are not supported yet: the engine offsets the hooks
+  rely on have to be verified against each build before they can be trusted.
+  See [Linux](#linux) for what differs there.
 - `gmsv_vanish`, this repository. Hides entities and answers A2S queries.
 - [gm_sourcenet](https://github.com/danielga/gm_sourcenet), optional, needed to
   filter `status` and `ping`. It needs the compatibility patch in
@@ -149,12 +150,13 @@ command filter says so in the console and stops.
 
 ## Downloads
 
-Every commit publishes a release with one archive per platform, currently
-`vanish-win32.zip`. Each archive mirrors the `garrysmod` directory:
+Every commit publishes a release with one archive per platform,
+`vanish-win32.zip` and `vanish-linux.zip`. Each archive mirrors the `garrysmod`
+directory:
 
 ```
-garrysmod/lua/bin/gmsv_vanish_win32.dll
-garrysmod/lua/bin/gmsv_sourcenet_win32.dll
+garrysmod/lua/bin/gmsv_vanish_win32.dll       gmsv_vanish_linux.dll on Linux
+garrysmod/lua/bin/gmsv_sourcenet_win32.dll    gmsv_sourcenet_linux.dll on Linux
 garrysmod/addons/vanish/lua/...
 ```
 
@@ -167,13 +169,15 @@ gm_sourcenet is built from its pinned upstream commit with the patch in
 ```sh
 git clone --recursive https://github.com/ds-kimi/vanish.git
 cd vanish/module/projects
-premake5 --gmcommon=../../dependencies/garrysmod_common vs2022   # or gmake
+premake5 --gmcommon=../../dependencies/garrysmod_common vs2022
 ```
 
 Build the generated project in **Release / Win32**, then copy
 `gmsv_vanish_win32.dll` into `garrysmod/lua/bin/`.
 
-That builds this repository's module only. `gmsv_sourcenet_win32.dll` has to
+For Linux, see [Linux](#linux).
+
+That builds this repository's module only. The sourcenet module has to
 come from the release archive, or from your own build of the pinned commit with
 the patch in [`patches/`](patches) applied. The CI workflow does exactly that,
 see [.github/workflows/build.yml](.github/workflows/build.yml).
@@ -181,6 +185,39 @@ see [.github/workflows/build.yml](.github/workflows/build.yml).
 The Lua half of gm_sourcenet is vendored, patched, in
 [`addon/lua/sourcenet/`](addon/lua/sourcenet), so a plain clone is installable.
 CI fails the build if it drifts from the pinned upstream.
+
+## Linux
+
+The 32-bit Linux dedicated server is supported, with the same features as
+Windows.
+
+- **Download** `vanish-linux.zip` from the releases and extract it over
+  `garrysmod/`, exactly like the Windows archive.
+- **The files end in `.dll`.** Garry's Mod loads `gmsv_<name>_linux.dll` on
+  Linux too, even though they are ordinary ELF shared objects. Don't rename
+  them to `.so`.
+- **Needs glibc 2.29 or newer** (Ubuntu 20.04, Debian 11 and later). No
+  `libtier0_srv.so` symlink is needed: the modules use whichever tier0 the
+  engine already loaded.
+- **Tested against** `bin/linux32` of the x86-64 branch, build
+  `2026.04.29/24 10119`. The Linux hooks find the engine code by byte pattern.
+  If a game update moves it, the affected feature prints a `[vanish] ... not
+  found` warning and turns itself off instead of crashing the server.
+- **Building it yourself** needs premake5 and a 32-bit toolchain
+  (`g++-multilib`):
+
+  ```sh
+  cd vanish/module/projects
+  premake5 --gmcommon=../../dependencies/garrysmod_common gmake
+  make -C projects/linux/gmake config=release_x86 gmsv_vanish
+  ```
+
+  The output is `projects/linux/gmake/x86/Release/gmsv_vanish_linux.dll`.
+  Release builds are made in an Ubuntu 20.04 container so they run on older
+  distros; CI builds gm_sourcenet the same way.
+
+How each Linux hook is found is documented in
+[CONTRIBUTING.md](CONTRIBUTING.md#linux).
 
 ## Installing
 
@@ -231,7 +268,7 @@ SteamID; set `status.spoof` to `true` to send fixed strings instead.
 Four commands enumerate players, and all four are dropped before the engine
 sees them. A dropped command has to be answered, because silence is a tell of
 its own: a client that types `users` and gets nothing back knows something ate
-it. Each reply is rebuilt in the engine's own format, taken out of `engine.dll`
+it. Each reply is rebuilt in the engine's own format, taken out of the engine
 rather than guessed:
 
 | Command | Format |

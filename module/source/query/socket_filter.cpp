@@ -4,6 +4,7 @@
 // validation, none of which this addon needs.
 
 #include "socket_filter.hpp"
+#include "challenge.hpp"
 #include "replies.hpp"
 #include "state.hpp"
 
@@ -13,7 +14,11 @@
 #include <tier0/vcrmode.h>
 #include <bitbuf.h>
 
+#include <cstring>
+
 #include <Platform.hpp>
+
+#include "../main.hpp"
 
 #if defined SYSTEM_WINDOWS
 
@@ -26,6 +31,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <errno.h>
+
+#include "../platform/elf_module.hpp"
+
+#include <vector>
 
 typedef int SOCKET;
 static const SOCKET INVALID_SOCKET = -1;
@@ -58,6 +67,13 @@ namespace Vanish
 
 			const char A2S_INFO = 'T';
 			const char A2S_PLAYER = 'U';
+			const char S2C_CHALLENGE = 'A';
+
+			// A2S_INFO carries this payload before its challenge, A2S_PLAYER
+			// carries its challenge straight after the type byte
+			const char INFO_PAYLOAD[] = "Source Engine Query";
+			const size_t INFO_CHALLENGE_AT = HEADER_SIZE + sizeof( INFO_PAYLOAD );
+			const size_t PLAYER_CHALLENGE_AT = HEADER_SIZE;
 
 			typedef int32_t ( *recvfrom_t )(
 				int32_t socket, char *buffer, int32_t length, int32_t flags,
@@ -66,6 +82,14 @@ namespace Vanish
 			static recvfrom_t original_recvfrom = nullptr;
 			static SOCKET game_socket = INVALID_SOCKET;
 			static bool attached = false;
+
+#if !defined SYSTEM_WINDOWS
+
+			// the engine calls libc's recvfrom directly, so its own call sites
+			// are what gets redirected
+			static std::vector<ElfModule::CallSite> call_sites;
+
+#endif
 
 			///@return the query this packet is asking for, 0 when it is not one
 			static char QueryType( const char *data, int32_t length )
@@ -92,12 +116,30 @@ namespace Vanish
 				return -1;
 			}
 
-			static void Reply( const sockaddr *to, int32_t tolen, char type )
+			///@return whether the query echoes the challenge issued to its sender
+			static bool HasChallenge( const char *data, int32_t length, char type, const sockaddr *from )
+			{
+				const size_t at = type == A2S_INFO ? INFO_CHALLENGE_AT : PLAYER_CHALLENGE_AT;
+				if( length < static_cast<int32_t>( at + sizeof( int32_t ) ) )
+					return false;
+
+				int32_t challenge = 0;
+				std::memcpy( &challenge, data + at, sizeof( challenge ) );
+				return challenge == Challenge::For( from );
+			}
+
+			static void Reply( const sockaddr *to, int32_t tolen, char type, bool challenged )
 			{
 				char buffer[1400] = { 0 };
 				bf_write packet( buffer, sizeof( buffer ) );
 
-				if( type == A2S_INFO )
+				if( !challenged )
+				{
+					packet.WriteLong( CONNECTIONLESS );
+					packet.WriteByte( S2C_CHALLENGE );
+					packet.WriteLong( Challenge::For( to ) );
+				}
+				else if( type == A2S_INFO )
 					Replies::BuildInfo( packet );
 				else
 					Replies::BuildPlayers( packet );
@@ -122,7 +164,7 @@ namespace Vanish
 				if( type == 0 )
 					return received;
 
-				Reply( from, *fromlen, type );
+				Reply( from, *fromlen, type, HasChallenge( buffer, received, type, from ) );
 				return Swallow( );
 			}
 
@@ -152,8 +194,28 @@ namespace Vanish
 					return false;
 				}
 
+#if defined SYSTEM_WINDOWS
+
 				original_recvfrom = VCRHook_recvfrom;
 				VCRHook_recvfrom = Detour;
+
+#else
+
+				// there is no VCR table to swap on Linux: the engine is built
+				// with it compiled out, and libc's recvfrom cannot be detoured
+				// safely because it opens with a call to a PC thunk
+				original_recvfrom = reinterpret_cast<recvfrom_t>( ElfModule::RedirectCalls(
+					global::engine_loader.GetModule( ), "recvfrom",
+					reinterpret_cast<void *>( Detour ), call_sites ) );
+
+				if( original_recvfrom == nullptr )
+				{
+					Warning( "[vanish] engine recvfrom calls not found, query hiding is disabled\n" );
+					return false;
+				}
+
+#endif
+
 				attached = true;
 
 				return true;
@@ -164,7 +226,16 @@ namespace Vanish
 				if( !attached )
 					return;
 
+#if defined SYSTEM_WINDOWS
+
 				VCRHook_recvfrom = original_recvfrom;
+
+#else
+
+				ElfModule::Restore( call_sites );
+
+#endif
+
 				attached = false;
 			}
 		}

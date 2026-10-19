@@ -22,3 +22,13 @@ CreateWorkspace({name = "vanish", abi_compatible = true})
 		IncludeScanning()
 		files({"../source/**.cpp", "../source/**.hpp"})
 		includedirs({"../source"})
+
+		-- code patching and ELF parsing, for the hooks the Linux engine
+		-- leaves no function to detour for
+		filter("system:not linux")
+			removefiles({"../source/platform/**"})
+
+		filter("system:linux")
+			links({"dl"})
+
+		filter({})

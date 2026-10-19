@@ -1,10 +1,18 @@
 #include "serverinfo.hpp"
 #include "stats_api.hpp"
 
+#include "../main.hpp"
+
 #include <GarrysMod/InterfacePointers.hpp>
+#include <Platform.hpp>
+#include <scanning/symbolfinder.hpp>
 
 #include <steam/steamclientpublic.h>
+#include <steam/steam_gameserver.h>
 #include <eiface.h>
+
+#include <cstdint>
+#include <cstring>
 
 namespace Vanish
 {
@@ -35,6 +43,56 @@ namespace ServerInfo
 		return 1;
 	}
 
+#if defined SYSTEM_LINUX
+
+	// The status command prints build_number( ), which the Linux engine does
+	// not export. GetServerVersion there reads a ServerVersion key that a
+	// dedicated server's steam.inf does not carry, so it returns 0. The build
+	// is taken from the one call to build_number( ) inside status instead:
+	//
+	//   call build_number
+	//   mov  edx, [ebp-0x2c8]
+	//   mov  [esp+0x14], edi
+	//   mov  [esp+0xc], eax          the build, the second %d of the version line
+	static const char BUILD_NUMBER_CALL[] =
+		"\xE8\x2A\x2A\x2A\x2A\x8B\x95\x2A\x2A\x2A\x2A\x89\x7C\x24\x14\x89\x44\x24\x0C";
+
+	// push ebp; mov eax, [build]; mov ebp, esp; pop ebp; ret
+	static const uint8_t BUILD_NUMBER_BODY[] = { 0x55, 0xA1 };
+	static const uint8_t BUILD_NUMBER_TAIL[] = { 0x89, 0xE5, 0x5D, 0xC3 };
+
+	///@return the engine's build number, 0 when it cannot be found
+	static int FindBuildNumber( )
+	{
+		SymbolFinder finder;
+		const uint8_t *call = static_cast<const uint8_t *>( finder.Resolve(
+			global::engine_loader.GetModule( ), BUILD_NUMBER_CALL, sizeof( BUILD_NUMBER_CALL ) - 1 ) );
+
+		if( call == nullptr )
+			return 0;
+
+		int32_t relative = 0;
+		std::memcpy( &relative, call + 1, sizeof( relative ) );
+		const uint8_t *function = call + 5 + relative;
+
+		// only a plain getter is called: anything else means the signature
+		// landed somewhere it was not written for
+		if( std::memcmp( function, BUILD_NUMBER_BODY, sizeof( BUILD_NUMBER_BODY ) ) != 0 ||
+			std::memcmp( function + 6, BUILD_NUMBER_TAIL, sizeof( BUILD_NUMBER_TAIL ) ) != 0 )
+			return 0;
+
+		return reinterpret_cast<int ( * )( )>( const_cast<uint8_t *>( function ) )( );
+	}
+
+	///@return the build number, scanned for once since it never changes
+	static int BuildNumber( )
+	{
+		static const int build = FindBuildNumber( );
+		return build;
+	}
+
+#endif
+
 	/// Pushes the engine build number the status line prints beside the patch
 	/// version. A dedicated server's steam.inf carries only PatchVersion, so
 	/// this is the only place the real number can come from.
@@ -43,8 +101,15 @@ namespace ServerInfo
 		if( engine_server == nullptr )
 			engine_server = InterfacePointers::VEngineServer( );
 
-		const int version =
+		int version =
 			engine_server != nullptr ? engine_server->GetServerVersion( ) : 0;
+
+#if defined SYSTEM_LINUX
+
+		if( version <= 0 )
+			version = BuildNumber( );
+
+#endif
 
 		if( version <= 0 )
 		{
@@ -53,6 +118,21 @@ namespace ServerInfo
 		}
 
 		LUA->PushNumber( version );
+		return 1;
+	}
+
+	/// Pushes whether VAC is protecting this session, which the status line
+	/// and the A2S reply both report, or nil before Steam is up.
+	LUA_FUNCTION_STATIC( IsSecure )
+	{
+		ISteamGameServer *steam = SteamGameServer( );
+		if( steam == nullptr )
+		{
+			LUA->PushNil( );
+			return 1;
+		}
+
+		LUA->PushBool( steam->BSecure( ) );
 		return 1;
 	}
 
@@ -65,6 +145,9 @@ namespace ServerInfo
 
 		LUA->PushCFunction( GetServerVersion );
 		LUA->SetField( -2, "GetServerVersion" );
+
+		LUA->PushCFunction( IsSecure );
+		LUA->SetField( -2, "IsSecure" );
 
 		Stats::Register( LUA );
 

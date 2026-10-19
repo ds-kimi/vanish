@@ -6,6 +6,12 @@
 #include "replies.hpp"
 #include "state.hpp"
 
+#include "../vanish/game_server.hpp"
+#include "../main.hpp"
+
+#include <Platform.hpp>
+#include <scanning/symbolfinder.hpp>
+
 #include <GarrysMod/InterfacePointers.hpp>
 
 #include <tier0/dbg.h>
@@ -17,6 +23,7 @@
 #include <convar.h>
 #include <steam/steamclientpublic.h>
 
+#include <cstring>
 #include <string>
 
 namespace Vanish
@@ -43,6 +50,10 @@ namespace Vanish
 			static IServerGameDLL *gamedll = nullptr;
 			static IFileSystem *filesystem = nullptr;
 			static ConVar *visible_max_players = nullptr;
+			static ConVar *server_location = nullptr;
+
+			// the game's VERSION number, which only Lua is given
+			static int32_t lua_version = 0;
 
 			// read once per Refresh, since none of it changes between queries
 			static std::string game_description;
@@ -66,19 +77,114 @@ namespace Vanish
 				return directory;
 			}
 
-			///@return the gamemode tags the server browser filters on
+#if defined SYSTEM_LINUX
+
+			// The Linux filesystem has four virtual functions ahead of
+			// Gamemodes( ) that the SDK header does not declare, so calling it
+			// through the header lands on the wrong slot and returns NULL. The
+			// engine's own tag code is read instead, for both the object and
+			// the slot it calls:
+			//
+			//   mov  eax, [g_pFullFileSystem]
+			//   mov  edx, [eax]
+			//   mov  [esp], eax
+			//   call [edx + Gamemodes]
+			//   mov  edx, [eax]
+			//   mov  [esp], eax
+			//   call [edx + 0x10]            Active( )
+			static const char GAMEMODES_CALL[] =
+				"\xA1\x2A\x2A\x2A\x2A\x8B\x10\x89\x04\x24\xFF\x92\x2A\x2A\x2A\x2A"
+				"\x8B\x10\x89\x04\x24\xFF\x52\x10";
+
+			const size_t FILESYSTEM_OPERAND = 1;
+			const size_t GAMEMODES_OPERAND = 12;
+
+			///@return the engine's gamemode system, nullptr when not found
+			static Gamemode::System *Gamemodes( )
+			{
+				static const uint8_t *code = nullptr;
+				if( code == nullptr )
+				{
+					SymbolFinder finder;
+					code = static_cast<const uint8_t *>( finder.Resolve( global::engine_loader.GetModule( ),
+						GAMEMODES_CALL, sizeof( GAMEMODES_CALL ) - 1 ) );
+				}
+
+				if( code == nullptr )
+					return nullptr;
+
+				IFileSystem **global_filesystem = nullptr;
+				int32_t offset = 0;
+				std::memcpy( &global_filesystem, code + FILESYSTEM_OPERAND, sizeof( global_filesystem ) );
+				std::memcpy( &offset, code + GAMEMODES_OPERAND, sizeof( offset ) );
+
+				IFileSystem *instance = *global_filesystem;
+				if( instance == nullptr )
+					return nullptr;
+
+				typedef Gamemode::System *( *Gamemodes_t )( IFileSystem * );
+				void **vtable = *reinterpret_cast<void ***>( instance );
+				return reinterpret_cast<Gamemodes_t>( vtable[offset / sizeof( void * )] )( instance );
+			}
+
+#else
+
+			static Gamemode::System *Gamemodes( )
+			{
+				return filesystem->Gamemodes( );
+			}
+
+#endif
+
+			///@return the gamemode name the way the engine tags it
+			static std::string TagName( std::string name )
+			{
+				// the engine strips this suffix before tagging
+				const std::string suffix = "_modded";
+				for( size_t at = name.find( suffix ); at != std::string::npos; at = name.find( suffix ) )
+					name.erase( at, suffix.size( ) );
+
+				return name;
+			}
+
+			///@return the tags the engine advertises, in its own order:
+			///gm, gmws, gmc, loc and ver
 			static std::string ReadGameTags( )
 			{
-				const IGamemodeSystem::Information &gamemode =
-					filesystem->Gamemodes( )->Active( );
+				Gamemode::System *gamemodes = Gamemodes( );
+				if( gamemodes == nullptr )
+					return std::string( );
+
+				const IGamemodeSystem::Information &gamemode = gamemodes->Active( );
 
 				std::string tags = " gm:";
-				tags += gamemode.name;
+				tags += TagName( gamemode.name );
 
 				if( gamemode.workshopid != 0 )
 				{
 					tags += " gmws:";
 					tags += std::to_string( gamemode.workshopid );
+				}
+
+				if( !gamemode.category.empty( ) )
+				{
+					tags += " gmc:";
+					tags += gamemode.category;
+				}
+
+				// the engine shows at most the first five characters, and only
+				// once more than one is set
+				const char *location = server_location != nullptr ? server_location->GetString( ) : "";
+				if( std::strlen( location ) > 1 )
+				{
+					tags += " loc:";
+					tags += std::string( location ).substr( 0, 5 );
+				}
+
+				if( lua_version != 0 )
+				{
+					tags += " ver:";
+					tags += std::to_string( lua_version );
 				}
 
 				return tags;
@@ -87,41 +193,56 @@ namespace Vanish
 			///@return PatchVersion from steam.inf, or a safe default
 			static std::string ReadGameVersion( )
 			{
-				FileHandle_t file = filesystem->Open( "steam.inf", "r", "GAME" );
+				FileHandle_t file = filesystem->Open( "steam.inf", "rb", "GAME" );
 				if( file == nullptr )
 					return DEFAULT_VERSION;
 
-				char line[256] = { 0 };
-				const bool failed = filesystem->ReadLine( line, sizeof( line ), file ) == nullptr;
+				// Read rather than ReadLine: Read lives on IBaseFileSystem,
+				// whose layout the Linux build shares with the header, while
+				// ReadLine sits past the slots the Linux IFileSystem adds
+				char buffer[512] = { 0 };
+				const int length = filesystem->Read( buffer, sizeof( buffer ) - 1, file );
 				filesystem->Close( file );
 
-				// the first line is PatchVersion=x.y.z, so the value starts
-				// after the key and its separator
-				if( failed || strlen( line ) <= 13 )
+				if( length <= 0 )
 					return DEFAULT_VERSION;
 
-				std::string version( &line[13] );
+				const std::string contents( buffer, static_cast<size_t>( length ) );
+				const std::string key = "PatchVersion=";
 
-				const size_t end = version.find_first_of( "\r\n" );
-				if( end != std::string::npos )
-					version.erase( end );
+				const size_t start = contents.find( key );
+				if( start == std::string::npos )
+					return DEFAULT_VERSION;
 
-				return version;
+				const size_t value = start + key.size( );
+				const size_t end = contents.find_first_of( "\r\n", value );
+				const std::string version = contents.substr( value,
+					end == std::string::npos ? std::string::npos : end - value );
+
+				return version.empty( ) ? DEFAULT_VERSION : version;
 			}
 
 			bool Initialize( )
 			{
-				server = InterfacePointers::Server( );
+				server = GameServer::Get( );
 				engine_server = InterfacePointers::VEngineServer( );
 				gamedll = InterfacePointers::ServerGameDLL( );
 				filesystem = InterfacePointers::FileSystemServer( );
 
 				ICvar *cvar = InterfacePointers::Cvar( );
 				if( cvar != nullptr )
+				{
 					visible_max_players = cvar->FindVar( "sv_visiblemaxplayers" );
+					server_location = cvar->FindVar( "sv_location" );
+				}
 
 				return server != nullptr && engine_server != nullptr
 					&& gamedll != nullptr && filesystem != nullptr;
+			}
+
+			void SetVersion( int32_t version )
+			{
+				lua_version = version;
 			}
 
 			void Refresh( )

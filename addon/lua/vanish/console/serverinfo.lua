@@ -32,8 +32,12 @@ local function readVersion()
 		or (vanishinfo and vanishinfo.GetServerVersion())
 		or cfg.build
 
-	-- the engine appends "secure" whenever VAC is active for the session
-	return string.format("%s/%i %i secure", patch, protocol, build)
+	-- the engine prints "secure" or "insecure" from the session's VAC state;
+	-- an older module that cannot say is assumed secure
+	local secure = vanishinfo and vanishinfo.IsSecure and vanishinfo.IsSecure()
+
+	return string.format("%s/%i %i %s", patch, protocol, build,
+		secure == false and "insecure" or "secure")
 end
 
 --- Reads the values the engine prints in status but Lua cannot reach.

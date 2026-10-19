@@ -10,9 +10,11 @@ local function pushPlayers()
 	vanishquery.ResetPlayers()
 	vanishquery.SetPlayerCount(#visible)
 
-	-- the engine reports VAC state itself, but a built reply cannot read it on
-	-- every build, so it is asserted here rather than defaulting to insecure
-	vanishquery.SetSecure(true)
+	-- the engine reports the session's real VAC state, so the built reply
+	-- does too. Only an older module without IsSecure falls back to asserting
+	-- secure, the state almost every public server is in
+	local secure = vanishinfo and vanishinfo.IsSecure and vanishinfo.IsSecure()
+	vanishquery.SetSecure(secure ~= false)
 
 	for _, ply in ipairs(visible) do
 		vanishquery.AddPlayer(ply:Nick(), ply:Frags(), ply:TimeConnected())

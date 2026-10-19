@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 class bf_write;
 
 namespace Vanish
@@ -14,6 +16,9 @@ namespace Vanish
 		{
 			///@return true when every interface the replies need was resolved
 			bool Initialize( );
+
+			/// Sets the game's VERSION number, advertised in the ver: tag.
+			void SetVersion( int32_t version );
 
 			/// Re-reads the game description, tags and version.
 			void Refresh( );

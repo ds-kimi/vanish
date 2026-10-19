@@ -187,6 +187,205 @@ index 8323feb..6a539ea 100644
  		CBaseServerProxy::UnHookRecalculateTags( );
  
  		LUA->PushNil( );
+diff --git a/source/server/linux_compat.cpp b/source/server/linux_compat.cpp
+new file mode 100644
+index 0000000..699926d
+--- /dev/null
++++ b/source/server/linux_compat.cpp
+@@ -0,0 +1,193 @@
++// Library names differ between the Linux server branches: tier0 and vstdlib
++// are libtier0_srv.so and libvstdlib_srv.so on the public branch, and
++// libtier0.so and libvstdlib.so in bin/linux32 of the x86-64 branch. Linking
++// either name makes the module fail to load on the other branch, or load a
++// second tier0 whose output never reaches the engine's console. Every symbol
++// the module takes from them is defined here and forwarded to the copy the
++// engine already loaded, so the module needs neither name.
++//
++// The x86-64 branch's 32-bit tier0 also stopped exporting the two interlocked
++// helpers, which are implemented here directly.
++
++#if defined __linux__
++
++#include <tier0/dbg.h>
++#include <tier0/platform.h>
++#include <tier0/threadtools.h>
++#include <color.h>
++
++#include <cstdarg>
++#include <cstdio>
++#include <cstdlib>
++
++#include <dlfcn.h>
++
++class IKeyValuesSystem;
++
++namespace
++{
++	///@return the named symbol from the first of the libraries already loaded
++	void *Find( const char *const *libraries, size_t count, const char *name )
++	{
++		for( size_t i = 0; i < count; ++i )
++		{
++			void *handle = dlopen( libraries[i], RTLD_LAZY | RTLD_NOLOAD );
++			if( handle == nullptr )
++				continue;
++
++			void *symbol = dlsym( handle, name );
++			dlclose( handle );
++
++			if( symbol != nullptr )
++				return symbol;
++		}
++
++		return nullptr;
++	}
++
++	void *Tier0( const char *name )
++	{
++		// libtier0.so first: on the x86-64 branch the _srv name may exist as
++		// a hand made link, and that copy is not the one the engine talks to
++		static const char *const libraries[] = { "libtier0.so", "libtier0_srv.so" };
++		return Find( libraries, 2, name );
++	}
++
++	void *VStdLib( const char *name )
++	{
++		static const char *const libraries[] = { "libvstdlib.so", "libvstdlib_srv.so" };
++		return Find( libraries, 2, name );
++	}
++
++	template<class T>
++	T Resolve( T &cache, void *( *finder )( const char * ), const char *name )
++	{
++		if( cache == nullptr )
++			cache = reinterpret_cast<T>( finder( name ) );
++
++		return cache;
++	}
++
++	typedef void ( *Print_t )( const char *format, ... );
++
++	/// tier0 exports no va_list printers, so the line is formatted here and
++	/// handed over finished.
++	void Print( Print_t &cache, const char *name, const char *format, va_list arguments )
++	{
++		char line[4096];
++		vsnprintf( line, sizeof( line ), format, arguments );
++
++		if( Resolve( cache, Tier0, name ) != nullptr )
++			cache( "%s", line );
++		else
++			fputs( line, stderr );
++	}
++}
++
++#define FORWARD_PRINT( name, symbol, format )      \
++	{                                                \
++		static Print_t cache = nullptr;              \
++		va_list arguments;                           \
++		va_start( arguments, format );               \
++		Print( cache, symbol, format, arguments );   \
++		va_end( arguments );                         \
++	}
++
++void Msg( const tchar *format, ... ) FORWARD_PRINT( Msg, "Msg", format )
++void Warning( const tchar *format, ... ) FORWARD_PRINT( Warning, "Warning", format )
++void ConMsg( const tchar *format, ... ) FORWARD_PRINT( ConMsg, "_Z6ConMsgPKcz", format )
++void DevMsg( const tchar *format, ... ) FORWARD_PRINT( DevMsg, "_Z6DevMsgPKcz", format )
++void COM_TimestampedLog( char const *format, ... ) FORWARD_PRINT( COM_TimestampedLog, "COM_TimestampedLog", format )
++
++void Error( const tchar *format, ... )
++{
++	FORWARD_PRINT( Error, "Error", format )
++
++	// tier0's Error never returns, and neither may this
++	std::abort( );
++}
++
++void DevMsg( int level, const tchar *format, ... )
++{
++	typedef void ( *LevelPrint_t )( int level, const char *format, ... );
++	static LevelPrint_t cache = nullptr;
++
++	char line[4096];
++	va_list arguments;
++	va_start( arguments, format );
++	vsnprintf( line, sizeof( line ), format, arguments );
++	va_end( arguments );
++
++	if( Resolve( cache, Tier0, "DevMsg" ) != nullptr )
++		cache( level, "%s", line );
++}
++
++void ConColorMsg( const Color &color, const tchar *format, ... )
++{
++	typedef void ( *ColorPrint_t )( const Color &color, const char *format, ... );
++	static ColorPrint_t cache = nullptr;
++
++	char line[4096];
++	va_list arguments;
++	va_start( arguments, format );
++	vsnprintf( line, sizeof( line ), format, arguments );
++	va_end( arguments );
++
++	if( Resolve( cache, Tier0, "_Z11ConColorMsgRK5ColorPKcz" ) != nullptr )
++		cache( color, "%s", line );
++	else
++		fputs( line, stderr );
++}
++
++struct tm *Plat_localtime( const time_t *timep, struct tm *result )
++{
++	typedef struct tm *( *localtime_t )( const time_t *, struct tm * );
++	static localtime_t cache = nullptr;
++
++	return Resolve( cache, Tier0, "Plat_localtime" ) != nullptr
++		? cache( timep, result ) : localtime_r( timep, result );
++}
++
++uint ThreadGetCurrentId( )
++{
++	typedef uint ( *ThreadGetCurrentId_t )( );
++	static ThreadGetCurrentId_t cache = nullptr;
++
++	return Resolve( cache, Tier0, "ThreadGetCurrentId" ) != nullptr
++		? cache( ) : static_cast<uint>( pthread_self( ) );
++}
++
++void CThreadFastMutex::Lock( const uint32 threadId, unsigned nSpinSleepTime ) volatile
++{
++	typedef void ( *Lock_t )( volatile CThreadFastMutex *, uint32, unsigned );
++	static Lock_t cache = nullptr;
++
++	if( Resolve( cache, Tier0, "_ZNV16CThreadFastMutex4LockEjj" ) != nullptr )
++	{
++		cache( this, threadId, nSpinSleepTime );
++		return;
++	}
++
++	while( !TryLock( threadId ) )
++		ThreadPause( );
++}
++
++long ThreadInterlockedExchange( long volatile *target, long value )
++{
++	return __sync_lock_test_and_set( target, value );
++}
++
++bool ThreadInterlockedAssignIf( long volatile *target, long value, long comperand )
++{
++	return __sync_bool_compare_and_swap( target, comperand, value );
++}
++
++extern "C" IKeyValuesSystem *KeyValuesSystem( )
++{
++	typedef IKeyValuesSystem *( *KeyValuesSystem_t )( );
++	static KeyValuesSystem_t cache = nullptr;
++
++	return Resolve( cache, VStdLib, "KeyValuesSystem" ) != nullptr ? cache( ) : nullptr;
++}
++
++#endif
 diff --git a/sourcenet/incoming.lua b/sourcenet/incoming.lua
 index d9954f2..9b04568 100644
 --- a/sourcenet/incoming.lua

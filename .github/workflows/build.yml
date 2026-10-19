@@ -22,9 +22,9 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
 
-    # only win32 is proven: the engine offsets the hooks read were verified
-    # against the x86 Windows engine. Adding a platform means adding a row here
-    # and checking those offsets against that build first.
+    # the engine offsets the hooks read were verified against the x86 Windows
+    # engine. Linux 32-bit has its own job below; adding another platform means
+    # checking those offsets against that build first.
     strategy:
       fail-fast: false
       matrix:
@@ -122,9 +122,78 @@ jobs:
           path: dist/vanish-${{ matrix.platform }}.zip
           if-no-files-found: error
 
+  # The Linux build runs in Ubuntu 20.04 rather than on the runner itself, so
+  # the modules need glibc 2.29 at most and load on older server distros.
+  build-linux:
+    name: Linux x86
+    runs-on: ubuntu-latest
+    container: ubuntu:20.04
+
+    steps:
+      - name: Install the toolchain
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            ca-certificates curl git g++-multilib make zip
+          git config --global --add safe.directory '*'
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Fetch premake5
+        run: |
+          curl -sSL -o premake5.tar.gz "https://github.com/danielga/garrysmod_common/releases/download/premake-build%2F5.0.0-beta8/premake-5.0.0-beta8-linux.tar.gz"
+          tar -xzf premake5.tar.gz -C /usr/local/bin
+          echo "GMCOMMON=$PWD/dependencies/garrysmod_common" >> "$GITHUB_ENV"
+
+      - name: Build gmsv_vanish
+        working-directory: module/projects
+        run: |
+          premake5 --gmcommon="$GMCOMMON" gmake
+          make -C projects/linux/gmake config=release_x86 -j"$(nproc)" gmsv_vanish
+
+      - name: Check out the patched gm_sourcenet
+        run: |
+          git clone --recursive "$SOURCENET_REPO" upstream/gm_sourcenet
+          git -C upstream/gm_sourcenet checkout --quiet "$SOURCENET_REF"
+          git -C upstream/gm_sourcenet apply "$PWD/patches/gm_sourcenet-engine-compat.patch"
+
+      - name: Build gmsv_sourcenet
+        working-directory: upstream/gm_sourcenet
+        run: |
+          premake5 --gmcommon="$GMCOMMON" gmake
+          make -C projects/linux/gmake config=release_x86 -j"$(nproc)" gmsv_sourcenet
+
+      # same layout as the Windows archive, so installing is a matter of
+      # extracting it over garrysmod/
+      - name: Package
+        run: |
+          stage=stage/garrysmod
+          mkdir -p "$stage/lua/bin" "$stage/addons/vanish"
+
+          for module in gmsv_vanish gmsv_sourcenet; do
+            dll=$(find . -path ./stage -prune -o -name "${module}_linux.dll" -print | head -n 1)
+            [ -n "$dll" ] || { echo "${module}_linux.dll was not produced"; exit 1; }
+            cp "$dll" "$stage/lua/bin/"
+          done
+
+          cp -r addon/lua "$stage/addons/vanish/lua"
+          cp README.md LICENSE "$stage/addons/vanish/"
+          cp -r licenses "$stage/addons/vanish/licenses"
+
+          mkdir -p dist
+          (cd stage && zip -qr ../dist/vanish-linux.zip garrysmod)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanish-linux
+          path: dist/vanish-linux.zip
+          if-no-files-found: error
+
   release:
     name: Release
-    needs: build
+    needs: [build, build-linux]
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
 

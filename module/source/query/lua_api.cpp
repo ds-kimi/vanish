@@ -70,6 +70,12 @@ namespace Vanish
 				if( !SocketFilter::Attach( ) )
 					return;
 
+				LUA->GetField( GarrysMod::Lua::INDEX_GLOBAL, "VERSION" );
+				if( LUA->IsType( -1, GarrysMod::Lua::Type::NUMBER ) )
+					Replies::SetVersion( static_cast<int32_t>( LUA->GetNumber( -1 ) ) );
+
+				LUA->Pop( 1 );
+
 				LUA->CreateTable( );
 
 				LUA->PushCFunction( SetEnabled );
