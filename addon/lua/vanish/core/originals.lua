@@ -8,6 +8,7 @@
 
 Vanish.RealGetAll = Vanish.RealGetAll or player.GetAll
 Vanish.RealGetHumans = Vanish.RealGetHumans or player.GetHumans
+Vanish.RealGetCount = Vanish.RealGetCount or player.GetCount
 Vanish.RealGetByID = Vanish.RealGetByID or player.GetByID
 Vanish.RealPlayer = Vanish.RealPlayer or Player
 

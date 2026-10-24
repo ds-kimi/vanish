@@ -3,6 +3,10 @@
 
 ---@return number count of players visible to third-party code
 function player.GetCount()
+	-- the engine counts without building a table, which matters while
+	-- nobody is vanished and this runs as often as addons call it
+	if not Vanish.IsActive() then return Vanish.RealGetCount() end
+
 	return #player.GetAll()
 end
 
