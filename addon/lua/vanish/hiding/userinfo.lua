@@ -20,6 +20,13 @@ hook.Add("PlayerDisconnected", "vanish_userinfo_cleanup", function(ply)
 	if IsValid(ply) then vanishuserinfo.SetHidden(ply:EntIndex(), false) end
 end)
 
+-- the engine rewrites the entry whenever the client changes a userinfo
+-- convar, its name included, which puts the real name back on every client;
+-- the module saves that newer copy and blanks it again on the next pass
+timer.Create("vanish_userinfo_refresh", Vanish.Config.refreshInterval, 0, function()
+	if Vanish.IsActive() then Vanish.RefreshUserInfo() end
+end)
+
 if not vanishuserinfo and Vanish.Config.hideUserinfo then
 	ErrorNoHalt("[vanish] userinfo module unavailable, string table entries stay\n")
 end
