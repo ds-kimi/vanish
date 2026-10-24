@@ -36,17 +36,9 @@ local function snapshot(event)
 	return out
 end
 
---- Runs the selected handlers of one hook for a player whose real connection
---- state never changed.
 ---@param event string hook name
 ---@param ... any the arguments the engine passes to this hook
-function Vanish.RunFakeHooks(event, ...)
-	if Vanish.Config.disconnect.hooks == "none" then return end
-
-	-- guards the addon's own cleanup and anything else that has to tell a
-	-- fake from the real thing
-	Vanish.Faking = true
-
+local function runSelected(event, ...)
 	for identifier, fn in pairs(snapshot(event)) do
 		-- object hooks are stored keyed by the object and called as methods
 		local ok, err
@@ -61,6 +53,26 @@ function Vanish.RunFakeHooks(event, ...)
 				event, tostring(identifier), tostring(err)))
 		end
 	end
+end
 
+--- Runs the selected handlers of one hook for a player whose real connection
+--- state never changed.
+---@param event string hook name
+---@param ... any the arguments the engine passes to this hook
+function Vanish.RunFakeHooks(event, ...)
+	if Vanish.Config.disconnect.hooks == "none" then return end
+
+	-- guards the addon's own cleanup and anything else that has to tell a
+	-- fake from the real thing
+	Vanish.Faking = true
+
+	-- building the snapshot can raise too, for an identifier whose __tostring
+	-- errors, and an error escaping here would leave Faking set for the rest
+	-- of the map, silently skipping every real disconnect cleanup
+	local ok, err = pcall(runSelected, event, ...)
 	Vanish.Faking = false
+
+	if not ok then
+		ErrorNoHalt(string.format("[vanish] %s fake hooks failed: %s\n", event, tostring(err)))
+	end
 end
