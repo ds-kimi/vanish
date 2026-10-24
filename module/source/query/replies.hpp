@@ -20,9 +20,11 @@ namespace Vanish
 			/// Sets the game's VERSION number, advertised in the ver: tag.
 			void SetVersion( int32_t version );
 
-			/// Re-reads the game description, tags and version.
+			/// Re-reads the tags, version, slot count and port. Takes the
+			/// query state lock itself.
 			void Refresh( );
 
+			/// Both builders must be called with the query state lock held.
 			void BuildInfo( bf_write &out );
 
 			void BuildPlayers( bf_write &out );
