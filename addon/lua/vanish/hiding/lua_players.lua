@@ -7,11 +7,14 @@
 function Vanish.Filter(list)
 	if not Vanish.IsActive() then return list end
 
+	-- the entity keyed set holds players only, so a plain lookup answers
+	-- for every kind of entity without an IsValid or IsPlayer call
+	local vanished = Vanish.VanishedEnts
 	local count = #list
 	local kept = 0
 	for i = 1, count do
 		local ent = list[i]
-		if not (IsValid(ent) and ent:IsPlayer() and Vanish.IsVanished(ent)) then
+		if not vanished[ent] then
 			kept = kept + 1
 			list[kept] = ent
 		end
@@ -37,7 +40,7 @@ end
 function Vanish.Mask(ent)
 	-- the engine lookups return NULL rather than nil when nothing matches,
 	-- and a hidden player has to look exactly like a missing one
-	if IsValid(ent) and ent:IsPlayer() and Vanish.IsVanished(ent) then return NULL end
+	if Vanish.IsVanished(ent) then return NULL end
 
 	return ent
 end

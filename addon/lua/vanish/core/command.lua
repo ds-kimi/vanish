@@ -49,7 +49,7 @@ hook.Add("PlayerDisconnected", "vanish_cleanup", function(ply)
 		Vanish.Stored[id] = true
 	end
 
-	Vanish.Vanished[id] = nil
+	Vanish.MarkVanished(ply, id, false)
 	nextAllowed[id] = nil
 
 	-- the player is still listed during this hook, and must not count as

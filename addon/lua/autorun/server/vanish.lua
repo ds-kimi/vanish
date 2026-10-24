@@ -11,6 +11,7 @@ local FILES = {
 	"vanish/core/originals.lua",
 
 	"vanish/core/state.lua",
+	"vanish/core/toggle.lua",
 
 	"vanish/hiding/entities.lua",
 	"vanish/hiding/lua_players.lua",
