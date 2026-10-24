@@ -1,6 +1,9 @@
 #pragma once
 
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -8,9 +11,13 @@ namespace Vanish
 {
 	namespace Query
 	{
-		// A2S_PLAYER has to fit one datagram, and a Source server never has
-		// more slots than this anyway.
+		// A Source server never has more slots than this.
 		const size_t MAX_PLAYERS = 128;
+
+		// The engine's own name buffer, NUL included. Names from Lua are
+		// already bounded by it; the cap only keeps a reply's size bounded no
+		// matter what Lua hands over.
+		const size_t MAX_NAME = 128;
 
 		/// Engine convars the replies follow. Lua reads them with GetConVar
 		/// and hands them over: the module's own ICvar does not resolve on the
@@ -35,47 +42,25 @@ namespace Vanish
 		/// The roster and flags the query replies are built from.
 		///
 		/// Lua fills this with the players an outside observer is allowed to
-		/// see; the socket filter never looks at the real player list.
-		class State
+		/// see; the socket filter never looks at the real player list. Every
+		/// field is read and written under Lock( ), because the engine's read
+		/// path and Lua are not guaranteed to share a thread.
+		struct State
 		{
-		public:
-			State( );
-
-			bool IsEnabled( ) const;
-			void SetEnabled( bool enabled );
-
-			bool IsSecure( ) const;
-			void SetSecure( bool secure );
-
-			int32_t VisibleCount( ) const;
-			int32_t VisibleBots( ) const;
-
-			/// Sets the counts A2S_INFO reports. Both come from the masked
-			/// roster: a vanished bot left in the engine's own bot count
-			/// would report more bots than players.
-			void SetVisibleCount( int32_t count, int32_t bots );
-
-			void ClearPlayers( );
-			void AddPlayer( const char *name, int32_t score, float time );
-
-			const std::vector<PlayerEntry> &Players( ) const;
-
-			const ConVars &Settings( ) const;
-			void SetSettings( const ConVars &settings );
-
-		private:
-			bool m_enabled;
-
-			// the engine cannot report VAC state to a spoofed reply on every
-			// build, so it is asserted from Lua instead of guessed
-			bool m_secure;
-
-			int32_t m_visible_count;
-			int32_t m_visible_bots;
-			std::vector<PlayerEntry> m_players;
-			ConVars m_settings;
+			bool secure = true;
+			int32_t visible_count = 0;
+			int32_t visible_bots = 0;
+			std::vector<PlayerEntry> players;
+			ConVars settings;
 		};
 
+		std::mutex &Lock( );
+
+		///@return the state, only to be touched while holding Lock( )
 		State &Get( );
+
+		/// Whether replies are answered here at all. Read on every datagram
+		/// without the lock, so it is atomic rather than part of State.
+		std::atomic<bool> &Enabled( );
 	}
 }
