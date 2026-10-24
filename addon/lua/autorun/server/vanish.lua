@@ -30,6 +30,7 @@ local FILES = {
 	"vanish/fake/hook_runs.lua",
 	"vanish/fake/disconnect.lua",
 	"vanish/fake/protect.lua",
+	"vanish/fake/protect_hooks.lua",
 
 	"vanish/core/immediate.lua",
 	"vanish/core/persist.lua",
