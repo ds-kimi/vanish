@@ -47,9 +47,11 @@ end
 
 --- Matches query spoofing to the current vanish state.
 function Vanish.RefreshQuery()
-	if not vanishquery or not Vanish.Config.hideFromQueries then return end
+	if not vanishquery then return end
 
-	local active = Vanish.IsActive()
+	-- turning the option off at runtime must hand replies back to the engine,
+	-- or the module keeps answering with the last roster it was given
+	local active = Vanish.IsActive() and Vanish.Config.hideFromQueries == true
 
 	-- filled before replies switch on, so the first one already carries the
 	-- masked roster rather than whatever the last session left behind
