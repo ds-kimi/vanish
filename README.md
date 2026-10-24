@@ -140,29 +140,53 @@ header to a delete for hidden entities, per receiving client.
 
 ## Requirements
 
-- Garry's Mod dedicated server, **32-bit**: Windows (`win32`) or Linux
-  (`linux`). 64-bit builds are not supported yet: the engine offsets the hooks
-  rely on have to be verified against each build before they can be trusted.
-  See [Linux](#linux) for what differs there.
+- Garry's Mod dedicated server, one of:
+
+  | Build | Branch | Module |
+  |---|---|---|
+  | Linux 64-bit | `x86-64` | `gmsv_vanish_linux64.dll` |
+  | Windows 64-bit | `x86-64` | `gmsv_vanish_win64.dll` |
+  | Windows 32-bit | public | `gmsv_vanish_win32.dll` |
+  | Linux 32-bit | `x86-64` (`bin/linux32`) | `gmsv_vanish_linux.dll` |
+
+  Every offset and signature the hooks rely on was checked against these
+  builds; see [Verified builds](#verified-builds).
 - `gmsv_vanish`, this repository. Hides entities and answers A2S queries.
 - [gm_sourcenet](https://github.com/danielga/gm_sourcenet), optional, needed to
   filter `status` and `ping`. It needs the compatibility patch in
   [`patches/`](patches) to load on current GMod builds; see
-  [CONTRIBUTING.md](CONTRIBUTING.md).
+  [CONTRIBUTING.md](CONTRIBUTING.md). Only the 32-bit archives ship it: its
+  64-bit build compiles, but its netchannel hooks have not been exercised on a
+  64-bit engine, so the 64-bit archives leave `filterCommands` without effect.
 
 Every feature degrades on its own. Without a module, the matching config option
 does nothing and the rest keeps working; without the `sourcenet` Lua, the
-command filter says so in the console and stops.
+command filter says so in the console and stops. A hook whose signature no
+longer matches after a game update prints a `[vanish] ... not found` warning and
+turns its feature off instead of crashing the server.
+
+## Verified builds
+
+| Build | Steam build id | Engine build |
+|---|---|---|
+| Linux 64-bit, `x86-64` branch | 26168682 | 2026.04.29/24 10211 |
+| Windows 64-bit, `x86-64` branch | 26168682 | 2026.04.29/24 10211 |
+| Windows 32-bit, public branch | 25375525 | 2026.04.29/24 10175 |
+
+The 32-bit public engine is not the same code as the `x86-64` branch: its
+`IFileSystem` has four fewer slots ahead of `Gamemodes( )`, and it exports
+neither `sv` nor `GMOD_GetNetSocket`. The module reads what differs from the
+engine itself instead of assuming either layout.
 
 ## Downloads
 
-Every commit publishes a release with one archive per platform,
-`vanish-win32.zip` and `vanish-linux.zip`. Each archive mirrors the `garrysmod`
-directory:
+Every commit publishes a release with one archive per platform:
+`vanish-linux64.zip`, `vanish-win64.zip`, `vanish-win32.zip` and
+`vanish-linux.zip`. Each archive mirrors the `garrysmod` directory:
 
 ```
-garrysmod/lua/bin/gmsv_vanish_win32.dll       gmsv_vanish_linux.dll on Linux
-garrysmod/lua/bin/gmsv_sourcenet_win32.dll    gmsv_sourcenet_linux.dll on Linux
+garrysmod/lua/bin/gmsv_vanish_<platform>.dll
+garrysmod/lua/bin/gmsv_sourcenet_<platform>.dll    32-bit archives only
 garrysmod/addons/vanish/lua/...
 ```
 
@@ -178,8 +202,12 @@ cd vanish/module/projects
 premake5 --gmcommon=../../dependencies/garrysmod_common vs2022
 ```
 
-Build the generated project in **Release / Win32**, then copy
-`gmsv_vanish_win32.dll` into `garrysmod/lua/bin/`.
+The generated project has both platforms: build **Release / Win32** for
+`gmsv_vanish_win32.dll` and **Release / x64** for `gmsv_vanish_win64.dll`, then
+copy the DLL into `garrysmod/lua/bin/`.
+
+garrysmod_common is pinned to its `x86-64-support-sourcesdk` branch, whose
+Source SDK carries the 64-bit libraries and struct layouts.
 
 For Linux, see [Linux](#linux).
 
@@ -194,33 +222,33 @@ CI fails the build if it drifts from the pinned upstream.
 
 ## Linux
 
-The 32-bit Linux dedicated server is supported, with the same features as
-Windows.
+The 64-bit Linux dedicated server, `bin/linux64` of the `x86-64` branch, is the
+primary target and has every feature Windows has.
 
-- **Download** `vanish-linux.zip` from the releases and extract it over
-  `garrysmod/`, exactly like the Windows archive.
-- **The files end in `.dll`.** Garry's Mod loads `gmsv_<name>_linux.dll` on
+- **Download** `vanish-linux64.zip` from the releases and extract it over
+  `garrysmod/`, exactly like the Windows archives.
+- **The files end in `.dll`.** Garry's Mod loads `gmsv_<name>_linux64.dll` on
   Linux too, even though they are ordinary ELF shared objects. Don't rename
   them to `.so`.
-- **Needs glibc 2.29 or newer** (Ubuntu 20.04, Debian 11 and later). No
-  `libtier0_srv.so` symlink is needed: the modules use whichever tier0 the
-  engine already loaded.
-- **Tested against** `bin/linux32` of the x86-64 branch, build
-  `2026.04.29/24 10119`. The Linux hooks find the engine code by byte pattern.
-  If a game update moves it, the affected feature prints a `[vanish] ... not
-  found` warning and turns itself off instead of crashing the server.
-- **Building it yourself** needs premake5 and a 32-bit toolchain
-  (`g++-multilib`):
+- **Needs glibc 2.29 or newer** (Ubuntu 20.04, Debian 11 and later) for the
+  release archives, which are built in an Ubuntu 20.04 container. A module you
+  build yourself needs the glibc of the machine it was built on.
+- **Links `libtier0.so` and `libsteam_api.so`**, the names the `x86-64` branch
+  ships in both `bin/linux64` and `bin/linux32`. The public branch's 32-bit
+  server calls tier0 `libtier0_srv.so`; running `gmsv_vanish_linux.dll` there
+  needs a `libtier0.so` link to it.
+- **Building it yourself** needs premake5 and a toolchain, plus `g++-multilib`
+  for the 32-bit module:
 
   ```sh
   cd vanish/module/projects
   premake5 --gmcommon=../../dependencies/garrysmod_common gmake
+  make -C projects/linux/gmake config=release_x86_64 gmsv_vanish
   make -C projects/linux/gmake config=release_x86 gmsv_vanish
   ```
 
-  The output is `projects/linux/gmake/x86/Release/gmsv_vanish_linux.dll`.
-  Release builds are made in an Ubuntu 20.04 container so they run on older
-  distros; CI builds gm_sourcenet the same way.
+  The output is `projects/linux/gmake/x86_64/Release/gmsv_vanish_linux64.dll`
+  and `projects/linux/gmake/x86/Release/gmsv_vanish_linux.dll`.
 
 How each Linux hook is found is documented in
 [CONTRIBUTING.md](CONTRIBUTING.md#linux).
