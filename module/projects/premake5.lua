@@ -1,4 +1,6 @@
-PROJECT_GENERATOR_VERSION = 2
+-- version 3 adds the x86_64 platform next to x86, so one generated project
+-- builds gmsv_vanish_win32/_win64 and gmsv_vanish_linux/_linux64
+PROJECT_GENERATOR_VERSION = 3
 
 newoption({
 	trigger = "gmcommon",
@@ -20,15 +22,17 @@ CreateWorkspace({name = "vanish", abi_compatible = true})
 		IncludeSteamAPI()
 		IncludeDetouring()
 		IncludeScanning()
+		-- platform specific files guard themselves with #if, so every
+		-- configuration compiles the same file list
 		files({"../source/**.cpp", "../source/**.hpp"})
 		includedirs({"../source"})
 
-		-- code patching and ELF parsing, for the hooks the Linux engine
-		-- leaves no function to detour for
-		filter("system:not linux")
-			removefiles({"../source/platform/**"})
-
 		filter("system:linux")
 			links({"dl"})
+			-- only gmod13_open and gmod13_close have to be visible. Everything
+			-- else, the bundled minhook and SDK code included, stays local so it
+			-- can neither interpose on nor be interposed by another module
+			buildoptions({"-fvisibility=hidden", "-fvisibility-inlines-hidden"})
+			linkoptions({"-Wl,--exclude-libs,ALL", "-Wl,-z,relro,-z,now", "-Wl,-z,noexecstack"})
 
 		filter({})
