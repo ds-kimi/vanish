@@ -1,6 +1,6 @@
 #pragma once
 
-struct sockaddr;
+#include <cstdint>
 
 namespace Vanish
 {
@@ -16,8 +16,10 @@ namespace Vanish
 		/// would answer a flood the engine would have ignored.
 		namespace RateLimit
 		{
-			/// Counts a query and reports whether it may be answered.
-			bool Allow( const sockaddr *from );
+			/// Counts a query and reports whether it may be answered. Must be
+			/// called with the query state lock held.
+			///@param address IPv4 address in network order
+			bool Allow( uint32_t address );
 		}
 	}
 }

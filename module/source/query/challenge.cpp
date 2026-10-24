@@ -2,6 +2,7 @@
 
 #include <Platform.hpp>
 
+#include <chrono>
 #include <random>
 
 #if defined SYSTEM_WINDOWS
@@ -21,35 +22,48 @@ namespace Vanish
 			// -1 asks for a challenge, so it can never be one
 			const int32_t REQUEST = -1;
 
-			///@return a secret drawn once per process, so challenges cannot
-			///be predicted from the address alone
-			static uint32_t Secret( )
+			static uint32_t secret = 0;
+
+			void Initialize( )
 			{
-				static const uint32_t secret = std::random_device( )( );
-				return secret;
+				if( secret != 0 )
+					return;
+
+				// random_device may throw where no entropy source is available;
+				// the clock is a weaker seed, but a query must never crash the server
+				try
+				{
+					secret = std::random_device( )( );
+				}
+				catch( ... )
+				{
+					secret = static_cast<uint32_t>(
+						std::chrono::steady_clock::now( ).time_since_epoch( ).count( ) );
+				}
+
+				secret |= 1;
 			}
 
-			///@return the sender's IPv4 address, 0 for any other family
-			static uint32_t Address( const sockaddr *from )
+			uint32_t Mix( uint32_t value )
 			{
-				if( from == nullptr || from->sa_family != AF_INET )
-					return 0;
-
-				return reinterpret_cast<const sockaddr_in *>( from )->sin_addr.s_addr;
-			}
-
-			int32_t For( const sockaddr *from )
-			{
-				// murmur3's finaliser, enough to spread the address over all
-				// 32 bits without carrying a hash dependency
-				uint32_t value = Address( from ) ^ Secret( );
+				// murmur3's finaliser, enough to spread the address over all 32
+				// bits without carrying a hash dependency
+				value ^= secret;
 				value ^= value >> 16;
 				value *= 0x85EBCA6BU;
 				value ^= value >> 13;
 				value *= 0xC2B2AE35U;
 				value ^= value >> 16;
+				return value;
+			}
 
-				const int32_t challenge = static_cast<int32_t>( value );
+			int32_t For( const sockaddr *from )
+			{
+				const uint32_t address = from != nullptr && from->sa_family == AF_INET
+					? reinterpret_cast<const sockaddr_in *>( from )->sin_addr.s_addr
+					: 0;
+
+				const int32_t challenge = static_cast<int32_t>( Mix( address ) );
 				return challenge == REQUEST ? 0 : challenge;
 			}
 		}

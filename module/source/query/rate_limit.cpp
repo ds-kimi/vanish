@@ -1,19 +1,9 @@
 #include "rate_limit.hpp"
+#include "challenge.hpp"
 #include "state.hpp"
 
-#include <Platform.hpp>
-
 #include <chrono>
-#include <cstdint>
 #include <unordered_map>
-
-#if defined SYSTEM_WINDOWS
-#define WIN32_LEAN_AND_MEAN
-#include <WinSock2.h>
-#else
-#include <netinet/in.h>
-#include <sys/socket.h>
-#endif
 
 namespace Vanish
 {
@@ -21,8 +11,14 @@ namespace Vanish
 	{
 		namespace RateLimit
 		{
-			// past this many tracked addresses, the expired ones are dropped
+			// past this many tracked addresses the expired ones are dropped, at
+			// most once a second so a flood cannot make every query walk the map
 			const size_t PRUNE_AT = 4096;
+			const double PRUNE_INTERVAL = 1.0;
+
+			// hard cap: a flood of spoofed source addresses would otherwise grow
+			// the map without bound. Past it, new addresses only count globally
+			const size_t MAX_TRACKED = 8192;
 
 			struct Window
 			{
@@ -30,14 +26,12 @@ namespace Vanish
 				int32_t count;
 			};
 
+			// keyed by the address mixed with the process secret, which is a
+			// bijection, so keys stay unique while their buckets stay
+			// unpredictable to whoever picks the source addresses
 			static std::unordered_map<uint32_t, Window> addresses;
 			static Window total = { 0.0, 0 };
-
-			static double Now( )
-			{
-				return std::chrono::duration<double>(
-					std::chrono::steady_clock::now( ).time_since_epoch( ) ).count( );
-			}
+			static double last_prune = 0.0;
 
 			/// Counts one query in window, the way the engine does: a window
 			/// that has run its length restarts at one.
@@ -51,12 +45,18 @@ namespace Vanish
 					return true;
 				}
 
-				++window.count;
+				if( window.count < INT32_MAX )
+					++window.count;
+
 				return window.count / length <= limit;
 			}
 
 			static void Prune( double now, double length )
 			{
+				if( addresses.size( ) < PRUNE_AT || now - last_prune < PRUNE_INTERVAL )
+					return;
+
+				last_prune = now;
 				for( auto entry = addresses.begin( ); entry != addresses.end( ); )
 					if( now - entry->second.start > length )
 						entry = addresses.erase( entry );
@@ -64,25 +64,34 @@ namespace Vanish
 						++entry;
 			}
 
-			bool Allow( const sockaddr *from )
+			///@return the window of an address, nullptr when the map is full
+			static Window *Track( uint32_t address, double now )
 			{
-				const ConVars &limits = Get( ).Settings( );
+				const uint32_t key = Challenge::Mix( address );
+				const auto found = addresses.find( key );
+				if( found != addresses.end( ) )
+					return &found->second;
+
+				if( addresses.size( ) >= MAX_TRACKED )
+					return nullptr;
+
+				return &addresses.emplace( key, Window{ now, 0 } ).first->second;
+			}
+
+			bool Allow( uint32_t address )
+			{
+				const ConVars &limits = Get( ).settings;
 				const double length = limits.queries_window > 0.0f ? limits.queries_window : 1.0;
-				const double now = Now( );
+				const double now = std::chrono::duration<double>(
+					std::chrono::steady_clock::now( ).time_since_epoch( ) ).count( );
 
-				if( from != nullptr && from->sa_family == AF_INET )
-				{
-					if( addresses.size( ) >= PRUNE_AT )
-						Prune( now, length );
+				Prune( now, length );
 
-					const uint32_t address = reinterpret_cast<const sockaddr_in *>( from )->sin_addr.s_addr;
-					Window &window = addresses.emplace( address, Window{ now, 0 } ).first->second;
-
-					// checked first, so one address flooding does not use up
-					// the global allowance as well
-					if( !Count( window, now, length, limits.queries_per_second ) )
-						return false;
-				}
+				// checked first, so one address flooding does not use up the
+				// global allowance as well
+				Window *window = Track( address, now );
+				if( window != nullptr && !Count( *window, now, length, limits.queries_per_second ) )
+					return false;
 
 				return Count( total, now, length, limits.queries_global );
 			}

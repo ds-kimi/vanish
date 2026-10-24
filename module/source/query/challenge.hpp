@@ -17,8 +17,16 @@ namespace Vanish
 		/// a reflection amplifier to anyone spoofing a source address.
 		namespace Challenge
 		{
+			/// Draws the per process secret. Called once before the filter is
+			/// installed, so the read path never reaches the random source.
+			void Initialize( );
+
 			///@return the challenge this address has to echo back
 			int32_t For( const sockaddr *from );
+
+			///@return value spread over all 32 bits with the process secret,
+			///so neither challenges nor hash buckets can be predicted
+			uint32_t Mix( uint32_t value );
 		}
 	}
 }
