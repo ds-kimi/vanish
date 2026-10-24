@@ -13,3 +13,6 @@ module/projects/projects/
 *.exp
 *.pdb
 *.obj
+
+# gm_sourcenet checkout the build clones next to the module
+upstream/

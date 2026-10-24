@@ -22,9 +22,11 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
 
-    # the engine offsets the hooks read were verified against the x86 Windows
-    # engine. Linux 32-bit has its own job below; adding another platform means
-    # checking those offsets against that build first.
+    # the engine offsets and signatures the hooks read were verified against
+    # each of these builds; adding a platform means checking them against that
+    # build first. gm_sourcenet is only shipped where it was verified: its
+    # 64-bit build compiles, but its netchannel hooks were never exercised
+    # there, so the 64-bit archives leave status and ping filtering off.
     strategy:
       fail-fast: false
       matrix:
@@ -34,6 +36,13 @@ jobs:
             platform: win32
             premake_action: vs2022
             msbuild_platform: Win32
+            sourcenet: true
+          - name: Windows x64
+            runner: windows-2022
+            platform: win64
+            premake_action: vs2022
+            msbuild_platform: x64
+            sourcenet: false
 
     steps:
       - uses: actions/checkout@v4
@@ -81,6 +90,7 @@ jobs:
         shell: pwsh
 
       - name: Build gmsv_sourcenet
+        if: matrix.sourcenet
         working-directory: upstream/gm_sourcenet
         run: |
           & $env:PREMAKE5 --gmcommon=$env:GMCOMMON ${{ matrix.premake_action }}
@@ -97,7 +107,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$stage/lua/bin" | Out-Null
           New-Item -ItemType Directory -Force -Path "$stage/addons/vanish" | Out-Null
 
-          foreach ($module in @("gmsv_vanish", "gmsv_sourcenet")) {
+          $modules = @("gmsv_vanish")
+          if ("${{ matrix.sourcenet }}" -eq "true") { $modules += "gmsv_sourcenet" }
+
+          foreach ($module in $modules) {
             $name = "${module}_${{ matrix.platform }}.dll"
             $dll = Get-ChildItem -Recurse -Filter $name |
               Where-Object { $_.FullName -notlike "*\stage\*" } | Select-Object -First 1
@@ -125,9 +138,22 @@ jobs:
   # The Linux build runs in Ubuntu 20.04 rather than on the runner itself, so
   # the modules need glibc 2.29 at most and load on older server distros.
   build-linux:
-    name: Linux x86
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     container: ubuntu:20.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86
+            config: release_x86
+            platform: linux
+            sourcenet: true
+          - name: Linux x64
+            config: release_x86_64
+            platform: linux64
+            sourcenet: false
 
     steps:
       - name: Install the toolchain
@@ -151,15 +177,17 @@ jobs:
         working-directory: module/projects
         run: |
           premake5 --gmcommon="$GMCOMMON" gmake
-          make -C projects/linux/gmake config=release_x86 -j"$(nproc)" gmsv_vanish
+          make -C projects/linux/gmake config=${{ matrix.config }} -j"$(nproc)" gmsv_vanish
 
       - name: Check out the patched gm_sourcenet
+        if: matrix.sourcenet
         run: |
           git clone --recursive "$SOURCENET_REPO" upstream/gm_sourcenet
           git -C upstream/gm_sourcenet checkout --quiet "$SOURCENET_REF"
           git -C upstream/gm_sourcenet apply "$PWD/patches/gm_sourcenet-engine-compat.patch"
 
       - name: Build gmsv_sourcenet
+        if: matrix.sourcenet
         working-directory: upstream/gm_sourcenet
         run: |
           premake5 --gmcommon="$GMCOMMON" gmake
@@ -172,9 +200,13 @@ jobs:
           stage=stage/garrysmod
           mkdir -p "$stage/lua/bin" "$stage/addons/vanish"
 
-          for module in gmsv_vanish gmsv_sourcenet; do
-            dll=$(find . -path ./stage -prune -o -name "${module}_linux.dll" -print | head -n 1)
-            [ -n "$dll" ] || { echo "${module}_linux.dll was not produced"; exit 1; }
+          modules="gmsv_vanish"
+          [ "${{ matrix.sourcenet }}" = "true" ] && modules="$modules gmsv_sourcenet"
+
+          for module in $modules; do
+            name="${module}_${{ matrix.platform }}.dll"
+            dll=$(find . -path ./stage -prune -o -name "$name" -print | head -n 1)
+            [ -n "$dll" ] || { echo "$name was not produced"; exit 1; }
             cp "$dll" "$stage/lua/bin/"
           done
 
@@ -183,12 +215,12 @@ jobs:
           cp -r licenses "$stage/addons/vanish/licenses"
 
           mkdir -p dist
-          (cd stage && zip -qr ../dist/vanish-linux.zip garrysmod)
+          (cd stage && zip -qr ../dist/vanish-${{ matrix.platform }}.zip garrysmod)
 
       - uses: actions/upload-artifact@v4
         with:
-          name: vanish-linux
-          path: dist/vanish-linux.zip
+          name: vanish-${{ matrix.platform }}
+          path: dist/vanish-${{ matrix.platform }}.zip
           if-no-files-found: error
 
   release:
