@@ -19,6 +19,35 @@ local function commandName(cmd)
 	return string.match(string.lower(cmd), '^%s*"?([%w_]+)')
 end
 
+-- Seconds between two synthesised replies to the same player. Each reply is a
+-- burst of reliable messages built over the whole roster, so without a limit
+-- a client could send hundreds of these commands per packet and have the
+-- server do that work for every one of them.
+local REPLY_COOLDOWN = 1
+
+---@type table<Player, number> next CurTime a player may be answered again
+local nextReply = setmetatable({}, {__mode = "k"})
+
+--- Answers a dropped command with its filtered listing, at most once per
+--- cooldown per player. Over the limit the command is still dropped, silently.
+---@param sender Player
+---@param name string lowercased command name
+local function answer(sender, name)
+	local reply = Vanish.Replies[name]
+	if not IsValid(sender) or not reply then return end
+
+	local now = CurTime()
+	if (nextReply[sender] or 0) > now then return end
+	nextReply[sender] = now + REPLY_COOLDOWN
+
+	-- answering is deferred out of the packet handler: writing to a
+	-- netchannel while its incoming datagram is still being filtered is
+	-- what corrupted the reliable stream before
+	timer.Simple(0, function()
+		if IsValid(sender) then reply(sender) end
+	end)
+end
+
 -- client console commands the engine forwards to the server arrive here before
 -- the server ever executes them, so a listing command can be dropped outright
 FilterIncomingMessage(net_StringCmd, function(netchan, read, write)
@@ -36,23 +65,11 @@ FilterIncomingMessage(net_StringCmd, function(netchan, read, write)
 
 		-- staff keep the real engine output; everyone else has the command
 		-- dropped here and answered with a filtered listing, so that silence
-		-- never hints at something being hidden
+		-- never hints at something being hidden. The message is dropped
+		-- entirely: rewriting it made the client print "Unknown command", and
+		-- the rewrite is only adopted once the whole datagram parsed
 		if Vanish.Config.filterCommands and Vanish.IsActive() and not Vanish.IsAllowed(sender) then
-			local reply = Vanish.Replies[name]
-
-			-- answering is deferred out of the packet handler: writing to a
-			-- netchannel while its incoming datagram is still being filtered
-			-- is what corrupted the reliable stream before
-			if IsValid(sender) and reply then
-				timer.Simple(0, function()
-					if IsValid(sender) then reply(sender) end
-				end)
-			end
-
-			-- the message is dropped entirely: rewriting it to a harmless
-			-- command made the client print "Unknown command". The rewrite is
-			-- only adopted once the whole datagram parsed, so dropping cannot
-			-- desync the rest of it (see MarkIncomingModified)
+			answer(sender, name)
 			MarkIncomingModified()
 			return
 		end
