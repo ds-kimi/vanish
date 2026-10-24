@@ -15,7 +15,9 @@ namespace Vanish
 	///
 	/// Both hooks read this on the server's networking path, once per client
 	/// per snapshot, so lookups are plain array reads and the hidden entities
-	/// are also kept as a compact list to iterate.
+	/// are also kept as a compact list to iterate. The list is kept up to date
+	/// in constant time per change, because Lua rebuilds the whole set on
+	/// every refresh, one entity at a time.
 	class HiddenSet
 	{
 	public:
@@ -33,11 +35,13 @@ namespace Vanish
 		static bool IsViewerIndex( double value );
 
 	private:
-		void RebuildList( );
-
 		bool m_hidden[MAX_ENTITIES];
 		bool m_exempt[MAX_VIEWERS];
+
+		// m_list holds the hidden entities in no particular order, and
+		// m_position where each of them sits in it
 		int32_t m_list[MAX_ENTITIES];
+		int32_t m_position[MAX_ENTITIES];
 		int32_t m_count;
 	};
 
