@@ -10,5 +10,11 @@ namespace Vanish
 		void Initialize( GarrysMod::Lua::ILuaBase *LUA );
 
 		void Deinitialize( GarrysMod::Lua::ILuaBase *LUA );
+
+		/// Adds the Steam readers to the table on top of the Lua stack.
+		void RegisterSteam( GarrysMod::Lua::ILuaBase *LUA );
+
+		/// Adds the version reader to the table on top of the Lua stack.
+		void RegisterVersion( GarrysMod::Lua::ILuaBase *LUA );
 	}
 }
