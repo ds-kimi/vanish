@@ -33,6 +33,7 @@ local FILES = {
 
 	"vanish/core/immediate.lua",
 	"vanish/core/persist.lua",
+	"vanish/core/persist_restore.lua",
 
 	"vanish/console/netchannel.lua",
 	"vanish/console/serverinfo.lua",

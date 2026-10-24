@@ -12,6 +12,10 @@ Vanish.VanishedEnts = Vanish.VanishedEnts or setmetatable({}, {__mode = "k"})
 function Vanish.IsAllowed(ply)
 	if not IsValid(ply) or not ply:IsPlayer() then return false end
 
+	-- until Steam has validated the ticket, SteamID is only what the client
+	-- claimed, and a staff ID would otherwise be honoured for that window
+	if Vanish.Config.requireSteamAuth and not ply:IsFullyAuthenticated() then return false end
+
 	return Vanish.Config.allowed[ply:SteamID()] == true
 end
 

@@ -68,6 +68,11 @@ Vanish.Config.blockedCommands = {
 	["stats"] = true,
 }
 
+-- Only honour an allowed SteamID once Steam has validated the player's ticket.
+-- Until then SteamID is whatever the client claimed. Set false only on a LAN or
+-- -insecure server, where validation never completes.
+Vanish.Config.requireSteamAuth = true
+
 -- Seconds between transmit refreshes. Weapons and children appear after a
 -- spawn, so state is re-applied periodically instead of only on toggle.
 Vanish.Config.refreshInterval = 2
