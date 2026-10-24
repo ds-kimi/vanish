@@ -55,13 +55,5 @@ namespace Vanish
 
 			LUA->SetField( GarrysMod::Lua::INDEX_GLOBAL, "transmitcontrol" );
 		}
-
-		void Deinitialize( GarrysMod::Lua::ILuaBase *LUA )
-		{
-			Hidden( ).Reset( );
-
-			LUA->PushNil( );
-			LUA->SetField( GarrysMod::Lua::INDEX_GLOBAL, "transmitcontrol" );
-		}
 	}
 }

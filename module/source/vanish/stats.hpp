@@ -16,5 +16,9 @@ namespace Vanish
 		/// Process CPU time as a percentage of one core, measured between calls.
 		///@return percentage, 0 on the first call and when the query fails
 		double CPUUsage( );
+
+		///@return cpu_delta over wall_delta as a percentage within [0, 100],
+		///0 when there is no interval to measure over yet
+		double ClampPercent( double cpu_delta, double wall_delta );
 	}
 }
