@@ -5,9 +5,11 @@
 function ents.FindByClass(class)
 	local found = Vanish.RealFindByClass(class)
 
-	-- only the player class can contain a vanished entity, so everything else
-	-- skips the copy entirely
-	if class ~= "player" and class ~= "*" then return found end
+	-- only a pattern that can match the player class can return a vanished
+	-- entity, so anything else skips the pass. The engine matches class names
+	-- case insensitively and with * wildcards, so "Player" and "pl*" can
+	if not isstring(class) then return found end
+	if not string.find(class, "*", 1, true) and string.lower(class) ~= "player" then return found end
 
 	return Vanish.Filter(found)
 end
