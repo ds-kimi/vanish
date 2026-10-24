@@ -13,8 +13,9 @@ namespace Vanish
 				LUA->CheckType( 1, GarrysMod::Lua::Type::NUMBER );
 				LUA->CheckType( 2, GarrysMod::Lua::Type::BOOL );
 
+				// written so that NaN fails the test instead of reaching the cast
 				const double index = LUA->GetNumber( 1 );
-				if( index < 1 || index > 128 )
+				if( !( index >= 1 && index <= 128 ) )
 				{
 					LUA->PushBool( false );
 					return 1;

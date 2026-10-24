@@ -1,6 +1,10 @@
 #include "fields.hpp"
 
+#include "../common/lua_args.hpp"
+
 #include <igameevents.h>
+
+#include <cstdint>
 
 namespace Vanish
 {
@@ -22,8 +26,7 @@ namespace Vanish
 					// event descriptors declare integer types for everything
 					// the disconnect and connect events carry, so a fractional
 					// value would only be truncated by the engine anyway
-					const double value = LUA->GetNumber( -1 );
-					event->SetInt( keyName, static_cast<int>( value ) );
+					event->SetInt( keyName, LuaArgs::ClampInteger( LUA->GetNumber( -1 ), INT32_MIN, INT32_MAX ) );
 					break;
 				}
 
