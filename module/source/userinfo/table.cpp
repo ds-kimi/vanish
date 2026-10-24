@@ -1,6 +1,5 @@
 #include "table.hpp"
-
-#include <GarrysMod/InterfacePointers.hpp>
+#include "entry.hpp"
 
 #include <networkstringtabledefs.h>
 
@@ -14,46 +13,27 @@ namespace Vanish
 		/// original user data of every slot that is currently blanked
 		static std::map<int32_t, std::vector<uint8_t>> saved;
 
-		///@return the userinfo string table, nullptr when unavailable
-		static INetworkStringTable *Table( )
-		{
-			static INetworkStringTable *table = nullptr;
-
-			if( table == nullptr )
-			{
-				INetworkStringTableContainer *container =
-					InterfacePointers::NetworkStringTableContainerServer( );
-
-				if( container != nullptr )
-					table = container->FindTable( "userinfo" );
-			}
-
-			return table;
-		}
-
 		bool Hide( int32_t slot )
 		{
-			INetworkStringTable *table = Table( );
-			if( table == nullptr || slot < 0 || slot >= table->GetNumStrings( ) )
+			INetworkStringTable *table = Entry::Table( );
+			int32_t length = 0;
+			const uint8_t *data = Entry::Data( table, slot, length );
+			if( data == nullptr )
 				return false;
 
-			if( saved.find( slot ) != saved.end( ) )
+			// already blank: nothing new to save. Otherwise the engine wrote the
+			// entry since it was blanked, after a name or setting change, and
+			// that newer copy is what must come back on Show
+			if( saved.find( slot ) != saved.end( ) && Entry::IsBlank( data, length ) )
 				return true;
 
-			int length = 0;
-			const void *data = table->GetStringUserData( slot, &length );
-			if( data == nullptr || length <= 0 )
-				return false;
-
-			const uint8_t *bytes = static_cast<const uint8_t *>( data );
-			saved[slot].assign( bytes, bytes + length );
+			saved[slot].assign( data, data + length );
 
 			// the whole entry is zeroed rather than a named field cleared: the
 			// layout of player_info_t differs between builds, and a zeroed
 			// entry carries no name, no SteamID and no friends ID on any of them
 			const std::vector<uint8_t> blank( static_cast<size_t>( length ), 0 );
 			table->SetStringUserData( slot, length, blank.data( ) );
-
 			return true;
 		}
 
@@ -63,8 +43,13 @@ namespace Vanish
 			if( entry == saved.end( ) )
 				return false;
 
-			INetworkStringTable *table = Table( );
-			if( table != nullptr )
+			// only an entry still blank is put back: a filled one was rewritten by
+			// the engine, for a new player in the slot or a changed setting, and
+			// the saved copy would overwrite it with someone else's identity
+			INetworkStringTable *table = Entry::Table( );
+			int32_t length = 0;
+			const uint8_t *data = Entry::Data( table, slot, length );
+			if( data != nullptr && Entry::IsBlank( data, length ) )
 				table->SetStringUserData( slot,
 					static_cast<int>( entry->second.size( ) ), entry->second.data( ) );
 
